@@ -70,7 +70,7 @@ The system relies on **three main inputs**.
 
 ### 4.1 CV / Profile Input
 
-The CV is the candidate’s formal professional profile.
+The CV is the candidate's formal professional profile.
 
 It is used to extract:
 - declared skills,
@@ -99,45 +99,55 @@ Example:
   "soft.communication": 4,
   "motivation.role_interest": 5
 }
-This format is chosen because it is:
+```
 
-machine-readable,
-easy to validate,
-easy to normalize,
-easy to aggregate.
-4.3 Interview Feedback Input
+This format is chosen because it is:
+- machine-readable,
+- easy to validate,
+- easy to normalize,
+- easy to aggregate.
+
+---
+
+### 4.3 Interview Feedback Input
 
 Interview feedback is provided as unstructured natural language text.
 
 Example:
 
-"Strong in backend and APIs, but lacks depth in system design. Good communication and strong motivation."
+> "Strong in backend and APIs, but lacks depth in system design. Good communication and strong motivation."
 
 This input captures information that numeric scores alone cannot capture:
+- perceived strengths,
+- perceived weaknesses,
+- motivation,
+- attitude,
+- communication,
+- psychological or behavioral signals,
+- recruiter concerns.
 
-perceived strengths,
-perceived weaknesses,
-motivation,
-attitude,
-communication,
-psychological or behavioral signals,
-recruiter concerns.
-5. Why These 3 Inputs
+---
+
+## 5. Why These 3 Inputs
 
 These three inputs are complementary:
 
-CV/profile matching tells us what the candidate looks like on paper
-test results tell us what the candidate demonstrated in evaluation
-interview feedback tells us how the candidate was perceived and what qualitative signals emerged
+- **CV/profile matching** tells us what the candidate looks like on paper
+- **test results** tell us what the candidate demonstrated in evaluation
+- **interview feedback** tells us how the candidate was perceived and what qualitative signals emerged
 
 This combination allows the system to avoid:
+- overvaluing CVs,
+- relying only on recruiter intuition,
+- making decisions from incomplete evidence.
 
-overvaluing CVs,
-relying only on recruiter intuition,
-making decisions from incomplete evidence.
-6. Global Processing Pipeline
+---
+
+## 6. Global Processing Pipeline
 
 The system follows a controlled, multi-stage pipeline.
+
+```
 Recruiter Inputs
    ├── CV file
    ├── Test results JSON
@@ -150,54 +160,60 @@ Test JSON → Validation → Normalization → Aggregation
 Interview Text → LLM Extraction → Structured Signals
 
 All Processed Data → Fusion Layer → Candidate Assessment Object → Final LLM Synthesis → Final Report
+```
 
-7. Detailed Input Processing Pipeline
+---
+
+## 7. Detailed Input Processing Pipeline
 
 This section explains the purpose of each input stage and how the data is transformed.
 
-7.1 CV Processing Pipeline
-Goal
+### 7.1 CV Processing Pipeline
+
+#### Goal
 
 The goal of the CV pipeline is to transform a raw uploaded resume into:
+- a structured candidate profile,
+- a job matching score,
+- an interpretable summary of profile alignment.
 
-a structured candidate profile,
-a job matching score,
-an interpretable summary of profile alignment.
-Steps
-Step 1 — CV Upload
+#### Steps
+
+##### Step 1 — CV Upload
 
 The recruiter uploads a CV file from the frontend.
 
 Accepted formats can include:
+- PDF
+- DOCX
+- plain text (optional)
 
-PDF
-DOCX
-plain text (optional)
-Step 2 — CV Parsing via HrFlow
+##### Step 2 — CV Parsing via HrFlow
 
 The backend sends the uploaded CV to HrFlow parsing services.
 
 This parsing step transforms the raw document into structured profile information such as:
+- name,
+- experience,
+- education,
+- skills,
+- role-related signals.
 
-name,
-experience,
-education,
-skills,
-role-related signals.
-Step 3 — Profile Retrieval
+##### Step 3 — Profile Retrieval
 
 Once parsed, the backend retrieves the normalized profile data.
 
-Step 4 — Profile/Job Scoring
+##### Step 4 — Profile/Job Scoring
 
 The backend then scores the parsed candidate profile against the target job.
 
 This creates a structured objective baseline for the candidate.
 
-CV Processing Output
+#### CV Processing Output
 
 Example:
 
+```json
 {
   "score": 78,
   "matched_skills": ["Python", "SQL", "FastAPI"],
@@ -205,19 +221,26 @@ Example:
   "experience_fit": "good",
   "summary": "Candidate shows strong alignment with backend requirements with minor gaps."
 }
-Why this matters
+```
+
+#### Why this matters
 
 This stage provides:
+- an objective role alignment score,
+- evidence of skills matching,
+- a baseline before subjective interpretation is introduced.
 
-an objective role alignment score,
-evidence of skills matching,
-a baseline before subjective interpretation is introduced.
-7.2 Test Results Processing Pipeline
-Goal
+---
+
+### 7.2 Test Results Processing Pipeline
+
+#### Goal
 
 The goal of this stage is to transform structured score inputs into stable evaluation dimensions.
 
-Input Format
+#### Input Format
+
+```json
 {
   "technical.python": 4,
   "technical.sql": 3,
@@ -225,89 +248,98 @@ Input Format
   "soft.communication": 4,
   "motivation.role_interest": 5
 }
-Processing Steps
-Step 1 — Schema Validation
+```
+
+#### Processing Steps
+
+##### Step 1 — Schema Validation
 
 The backend checks:
-
-that the JSON is valid,
-that keys follow the expected schema,
-that scores are within the accepted range.
+- that the JSON is valid,
+- that keys follow the expected schema,
+- that scores are within the accepted range.
 
 Recommended score scale:
+- 1 = weak
+- 2 = insufficient
+- 3 = acceptable
+- 4 = good
+- 5 = excellent
 
-1 = weak
-2 = insufficient
-3 = acceptable
-4 = good
-5 = excellent
-Step 2 — Normalization
+##### Step 2 — Normalization
 
 Scores are normalized to a consistent internal scale.
 
 Example:
+- raw 1–5 scale remains interpretable,
+- later converted to normalized values for fusion.
 
-raw 1–5 scale remains interpretable,
-later converted to normalized values for fusion.
-Step 3 — Aggregation by Dimension
+##### Step 3 — Aggregation by Dimension
 
 Individual competency scores are grouped into broader categories:
+- technical fit,
+- soft skills,
+- motivation.
 
-technical fit,
-soft skills,
-motivation.
-Test Processing Output
+#### Test Processing Output
+
+```json
 {
   "technical_score": 3.0,
   "soft_skills_score": 4.0,
   "motivation_score": 5.0,
   "summary": "Strong in Python and communication, weaker in system design."
-} 
-Why this matters
+}
+```
+
+#### Why this matters
 
 This stage converts raw evaluation scores into:
+- stable dimensions,
+- comparable candidate metrics,
+- fusion-ready evidence.
 
-stable dimensions,
-comparable candidate metrics,
-fusion-ready evidence.
-7.3 Interview Feedback Processing Pipeline
-Goal
+---
+
+### 7.3 Interview Feedback Processing Pipeline
+
+#### Goal
 
 The goal of this stage is to transform recruiter-written free text into structured hiring signals.
 
-Why LLM parsing is needed
+#### Why LLM parsing is needed
 
 Interview notes are often:
-
-subjective,
-unstructured,
-inconsistent in style,
-difficult to compare directly across candidates.
+- subjective,
+- unstructured,
+- inconsistent in style,
+- difficult to compare directly across candidates.
 
 A recruiter may write:
-
-a long paragraph,
-short bullet notes,
-vague remarks,
-mixed positive/negative comments.
+- a long paragraph,
+- short bullet notes,
+- vague remarks,
+- mixed positive/negative comments.
 
 The system needs to convert that into structured evidence.
 
-Input Example
+#### Input Example
 
-"Strong in backend and APIs, but lacks depth in system design. Good communication and strong motivation."
+> "Strong in backend and APIs, but lacks depth in system design. Good communication and strong motivation."
 
-Step 1 — LLM Extraction
+##### Step 1 — LLM Extraction
 
 A dedicated AI reasoning step analyzes the raw interview review text and extracts:
+- strengths,
+- weaknesses,
+- risks,
+- motivation signal,
+- psychological/behavioral signal,
+- a short structured summary.
 
-strengths,
-weaknesses,
-risks,
-motivation signal,
-psychological/behavioral signal,
-a short structured summary.
-Interview Parsing Output
+#### Interview Parsing Output
+
+```json
 {
   "strengths": ["backend development", "Python", "communication", "motivation"],
   "weaknesses": ["system design", "architecture depth"],
@@ -316,75 +348,87 @@ Interview Parsing Output
   "psychological_signal": "positive and engaged",
   "summary": "Interview confirms backend strength, strong engagement, and a weakness in architecture depth."
 }
-Why this matters
+```
+
+#### Why this matters
 
 This stage captures qualitative information that numbers cannot fully represent:
+- enthusiasm,
+- confidence,
+- recruiter trust,
+- behavioral fit,
+- risk concerns.
 
-enthusiasm,
-confidence,
-recruiter trust,
-behavioral fit,
-risk concerns.
-8. Data Fusion Layer
-Goal
+---
+
+## 8. Data Fusion Layer
+
+#### Goal
 
 The goal of the fusion layer is to combine the three processed inputs into a single coherent candidate assessment package.
 
 The fusion layer is the most important non-LLM part of the system.
 
 It is responsible for:
+- combining quantitative and qualitative evidence,
+- computing weighted scores,
+- detecting reinforcing signals,
+- detecting contradictions,
+- preparing a final structured object for the synthesis model.
 
-combining quantitative and qualitative evidence,
-computing weighted scores,
-detecting reinforcing signals,
-detecting contradictions,
-preparing a final structured object for the synthesis model.
-8.1 Weighting Strategy
+### 8.1 Weighting Strategy
 
 For the MVP, the fusion uses fixed weights:
 
-CV / Profile Matching: 35%
-Test Results: 40%
-Interview Feedback: 25%
-Why this weighting is reasonable
-CV/profile matching is useful, but should not dominate the whole decision
-test results are given the highest weight because they reflect demonstrated ability
-interview feedback remains important but should not override objective evidence
-8.2 Fusion Logic
+| Source | Weight |
+|---|---|
+| CV / Profile Matching | 35% |
+| Test Results | 40% |
+| Interview Feedback | 25% |
+
+#### Why this weighting is reasonable
+
+- CV/profile matching is useful, but should not dominate the whole decision
+- test results are given the highest weight because they reflect demonstrated ability
+- interview feedback remains important but should not override objective evidence
+
+### 8.2 Fusion Logic
 
 The fusion layer performs three major operations.
 
-A. Score Combination
+#### A. Score Combination
 
 The backend computes normalized scores and produces dimension-level outputs such as:
+- technical fit,
+- communication fit,
+- motivation fit,
+- overall score.
 
-technical fit,
-communication fit,
-motivation fit,
-overall score.
-B. Signal Consolidation
+#### B. Signal Consolidation
 
 The backend merges:
+- strengths,
+- weaknesses,
+- risks,
 
-strengths,
-weaknesses,
-risks,
 across all sources.
-C. Consistency Analysis
+
+#### C. Consistency Analysis
 
 The backend detects:
-
-reinforcing evidence,
-contradictions between sources,
-repeated weaknesses,
-repeated strengths.
+- reinforcing evidence,
+- contradictions between sources,
+- repeated weaknesses,
+- repeated strengths.
 
 Examples:
+- CV and interview both confirm backend strength
+- test and interview both confirm system design weakness
+- CV claims architecture experience but test/interview do not confirm it
 
-CV and interview both confirm backend strength
-test and interview both confirm system design weakness
-CV claims architecture experience but test/interview do not confirm it
-9. Candidate Assessment Object
+---
+
+## 9. Candidate Assessment Object
 
 The final output of the fusion layer is a Candidate Assessment Object.
 
@@ -394,7 +438,9 @@ It is not raw input.
 It is not a dump of every field.
 It is a cleaned, summarized, weighted, structured evaluation package.
 
-Final Fusion Object
+#### Final Fusion Object
+
+```json
 {
   "candidate_context": {
     "candidate_id": "cand_001",
@@ -462,7 +508,11 @@ Final Fusion Object
     }
   }
 }
-10. AI Agent Design
+```
+
+---
+
+## 10. AI Agent Design
 
 This project uses two specialized pseudo-agents, implemented as two controlled LLM reasoning steps.
 
@@ -471,97 +521,126 @@ This is intentional.
 We do not want an uncontrolled autonomous agent.
 We want a deterministic pipeline with clear responsibilities.
 
-10.1 Agent 1 — Interview Parsing Agent
-Role
+### 10.1 Agent 1 — Interview Parsing Agent
+
+#### Role
 
 Transform raw interview review text into structured recruitment signals.
 
-Input
-raw interview text
-Output
-strengths
-weaknesses
-risks
-motivation signal
-psychological signal
-summary
-Why it exists
+#### Input
+
+- raw interview text
+
+#### Output
+
+- strengths
+- weaknesses
+- risks
+- motivation signal
+- psychological signal
+- summary
+
+#### Why it exists
 
 This agent standardizes recruiter text and makes it machine-readable.
 
-10.2 Agent 2 — Final Synthesis Agent
-Role
+---
+
+### 10.2 Agent 2 — Final Synthesis Agent
+
+#### Role
 
 Generate the final standardized candidate synthesis report from the Candidate Assessment Object.
 
-Input
-fully structured fusion object
-Output
-executive summary
-recommendation
-strengths
-weaknesses
-risks
-technical assessment
-behavioral assessment
-consistency analysis
-final justification
-Why it exists
+#### Input
+
+- fully structured fusion object
+
+#### Output
+
+- executive summary
+- recommendation
+- strengths
+- weaknesses
+- risks
+- technical assessment
+- behavioral assessment
+- consistency analysis
+- final justification
+
+#### Why it exists
 
 This agent transforms structured evidence into a readable, recruiter-facing final report.
 
-11. Final Output Format
+---
+
+## 11. Final Output Format
 
 The final output of the system is a standardized candidate synthesis report.
 
 It must always follow the same structure to ensure comparability.
 
-Human-readable structure
-Executive Summary
-Overall Recommendation
-Key Strengths
-Key Weaknesses
-Risk Factors
-Technical Assessment
-Behavioral & Motivation Assessment
-Consistency Analysis
-Final Justification
-Example Human-readable Output
-Executive Summary
+#### Human-readable structure
+
+- Executive Summary
+- Overall Recommendation
+- Key Strengths
+- Key Weaknesses
+- Risk Factors
+- Technical Assessment
+- Behavioral & Motivation Assessment
+- Consistency Analysis
+- Final Justification
+
+#### Example Human-readable Output
+
+##### Executive Summary
 
 Strong backend-oriented candidate with good Python skills and high motivation. However, the candidate shows weaker system design depth and limited architecture exposure. Suitable for a backend role with technical mentorship.
 
-Overall Recommendation
-Decision: Consider
-Confidence Level: Medium
-Overall Score: 0.77
-Key Strengths
-Strong Python skills
-Good backend API understanding
-High motivation
-Clear communication
-Key Weaknesses
-Weak system design depth
-Limited architecture exposure
-Risk Factors
-May require support for scalability and system design topics
-Technical Assessment
+##### Overall Recommendation
+
+- **Decision:** Consider
+- **Confidence Level:** Medium
+- **Overall Score:** 0.77
+
+##### Key Strengths
+
+- Strong Python skills
+- Good backend API understanding
+- High motivation
+- Clear communication
+
+##### Key Weaknesses
+
+- Weak system design depth
+- Limited architecture exposure
+
+##### Risk Factors
+
+- May require support for scalability and system design topics
+
+##### Technical Assessment
 
 The candidate demonstrates solid backend capability and relevant technical alignment with the job. However, both test results and interview feedback reveal a recurring weakness in architecture-level reasoning.
 
-Behavioral & Motivation Assessment
+##### Behavioral & Motivation Assessment
 
 The candidate appears engaged, communicates clearly, and shows strong interest in the role. Motivation is consistently high across evaluation signals.
 
-Consistency Analysis
+##### Consistency Analysis
 
 Backend strengths are confirmed across CV and interview feedback. System design weakness is confirmed across test results and interview assessment. No major contradiction is detected.
 
-Final Justification
+##### Final Justification
 
 The candidate is a strong backend-oriented profile with clear motivation and good communication. Because system design weaknesses appear repeatedly, the recommendation is "Consider" rather than immediate "Hire".
 
-JSON Output Format
+---
+
+#### JSON Output Format
+
+```json
 {
   "executive_summary": "Strong backend-oriented candidate with good Python skills and high motivation, but weaker system design depth.",
   "decision": "Consider",
@@ -585,93 +664,105 @@ JSON Output Format
   "consistency_analysis": "Backend strengths are confirmed across CV and interview. System design weakness is confirmed across test and interview.",
   "justification": "The candidate is a solid backend profile with strong motivation, but the repeated weakness in system design suggests a 'Consider' recommendation rather than a direct 'Hire'."
 }
-12. Frontend Specification
+```
+
+---
+
+## 12. Frontend Specification
 
 The frontend is designed for recruiters or HR users.
 
 Its role is to:
+- collect structured inputs,
+- send them to the backend,
+- visualize processing states,
+- display the final report.
 
-collect structured inputs,
-send them to the backend,
-visualize processing states,
-display the final report.
-12.1 Frontend Technical Stack
-React
-TypeScript
-Vite
-Tailwind CSS
-shadcn/ui (optional but recommended)
-React Hook Form
-Zod (optional for validation)
-12.2 Frontend Pages / Views
-A. Input Page
+### 12.1 Frontend Technical Stack
+
+- React
+- TypeScript
+- Vite
+- Tailwind CSS
+- shadcn/ui (optional but recommended)
+- React Hook Form
+- Zod (optional for validation)
+
+### 12.2 Frontend Pages / Views
+
+#### A. Input Page
 
 This page allows the recruiter to submit:
+- CV file upload
+- target job title / target job ID
+- candidate name / candidate ID
+- test results JSON
+- interview type
+- interview feedback text
 
-CV file upload
-target job title / target job ID
-candidate name / candidate ID
-test results JSON
-interview type
-interview feedback text
-B. Processing View
+#### B. Processing View
 
 This view shows pipeline progression:
+- CV parsed
+- profile matched to job
+- interview signals extracted
+- fusion object created
+- final synthesis generated
 
-CV parsed
-profile matched to job
-interview signals extracted
-fusion object created
-final synthesis generated
-C. Results Page
+#### C. Results Page
 
 This page displays:
+- executive summary
+- recommendation
+- strengths
+- weaknesses
+- risks
+- technical assessment
+- behavioral assessment
+- consistency analysis
+- final justification
 
-executive summary
-recommendation
-strengths
-weaknesses
-risks
-technical assessment
-behavioral assessment
-consistency analysis
-final justification
-12.3 Frontend UX Goal
+### 12.3 Frontend UX Goal
 
 The frontend should feel like a guided recruiter workflow, not like a generic chatbot.
 
 The ideal experience is:
+1. fill inputs,
+2. click generate,
+3. see processing steps,
+4. receive final synthesis report.
 
-fill inputs,
-click generate,
-see processing steps,
-receive final synthesis report.
-13. Backend Specification
+---
+
+## 13. Backend Specification
 
 The backend orchestrates the full pipeline.
 
 It is responsible for:
+- receiving recruiter inputs,
+- calling HrFlow for CV/profile processing,
+- validating test JSON,
+- calling LLM for interview parsing,
+- building the fusion object,
+- calling LLM for final synthesis generation,
+- returning the final standardized report.
 
-receiving recruiter inputs,
-calling HrFlow for CV/profile processing,
-validating test JSON,
-calling LLM for interview parsing,
-building the fusion object,
-calling LLM for final synthesis generation,
-returning the final standardized report.
-13.1 Backend Technical Stack
-Python 3.11+
-FastAPI
-Pydantic
-httpx
-python-multipart
-uvicorn
+### 13.1 Backend Technical Stack
+
+- Python 3.11+
+- FastAPI
+- Pydantic
+- httpx
+- python-multipart
+- uvicorn
 
 Optional:
+- SQLite for persistence
+- or in-memory state for the MVP demo
 
-SQLite for persistence
-or in-memory state for the MVP demo
-13.2 Backend Architecture
+### 13.2 Backend Architecture
+
+```
 Frontend
    ↓
 FastAPI Backend
@@ -684,57 +775,78 @@ FastAPI Backend
 External APIs
    ├── HrFlow API
    └── OpenAI API
-14. API Endpoints
+```
+
+---
+
+## 14. API Endpoints
 
 For the MVP, the backend should expose the following routes.
 
-14.1 Parse CV
+### 14.1 Parse CV
+
+```
 POST /api/cv/parse
+```
 
 Purpose:
+- receive CV file,
+- forward it to HrFlow,
+- return normalized CV/profile information.
 
-receive CV file,
-forward it to HrFlow,
-return normalized CV/profile information.
-14.2 Extract Interview Signals
+### 14.2 Extract Interview Signals
+
+```
 POST /api/candidate/interview/extract
+```
 
 Purpose:
+- send interview feedback text to the interview parsing agent,
+- return structured interview signals.
 
-send interview feedback text to the interview parsing agent,
-return structured interview signals.
-14.3 Build Candidate Assessment
+### 14.3 Build Candidate Assessment
+
+```
 POST /api/candidate/assessment/build
+```
 
 Purpose:
+- combine CV/profile matching,
+- test results,
+- structured interview signals,
+- build the final Candidate Assessment Object.
 
-combine CV/profile matching,
-test results,
-structured interview signals,
-build the final Candidate Assessment Object.
-14.4 Generate Candidate Synthesis
+### 14.4 Generate Candidate Synthesis
+
+```
 POST /api/candidate/synthesis/generate
+```
 
 Purpose:
+- send the fused assessment object to the final synthesis agent,
+- return the standardized report.
 
-send the fused assessment object to the final synthesis agent,
-return the standardized report.
-14.5 Full Pipeline Endpoint
+### 14.5 Full Pipeline Endpoint
+
+```
 POST /api/candidate/full-pipeline
+```
 
-Purpose:
-Single demo endpoint that:
-
-parses the CV,
-scores profile/job fit,
-validates and aggregates test results,
-extracts interview signals,
-builds the fusion object,
-generates the final report.
+Purpose — Single demo endpoint that:
+- parses the CV,
+- scores profile/job fit,
+- validates and aggregates test results,
+- extracts interview signals,
+- builds the fusion object,
+- generates the final report.
 
 This is the best route for the hackathon demo.
 
-15. Pydantic Schemas
+---
+
+## 15. Pydantic Schemas
+
+```python
 from typing import Dict, List, Literal, Optional
 from pydantic import BaseModel, Field, conint, confloat
 
@@ -856,7 +968,13 @@ class CandidateSynthesisReport(BaseModel):
     behavioral_assessment: str
     consistency_analysis: str
     justification: str
-16. FastAPI Endpoint Skeleton
+```
+
+---
+
+## 16. FastAPI Endpoint Skeleton
+
+```python
 from fastapi import FastAPI, UploadFile, File
 from typing import Any, Dict
 
@@ -886,8 +1004,15 @@ async def generate_candidate_synthesis(payload: dict) -> Dict[str, Any]:
 @app.post("/api/candidate/full-pipeline")
 async def full_pipeline(payload: dict) -> Dict[str, Any]:
     return {"message": "Full pipeline executed"}
-17. LLM Prompts
-17.1 Interview Parsing Agent Prompt
+```
+
+---
+
+## 17. LLM Prompts
+
+### 17.1 Interview Parsing Agent Prompt
+
+```
 You are an AI recruitment signal extractor.
 
 Your task is to analyze unstructured interview feedback and convert it into structured recruitment signals.
@@ -920,7 +1045,11 @@ Expected JSON:
   "psychological_signal": "positive",
   "summary": "..."
 }
-17.2 Final Synthesis Agent Prompt
+```
+
+### 17.2 Final Synthesis Agent Prompt
+
+```
 You are an AI recruitment analyst.
 
 You receive a fully processed candidate assessment object.
@@ -951,93 +1080,106 @@ Expected JSON format:
   "consistency_analysis": "...",
   "justification": "..."
 }
-18. Demo Flow
+```
+
+---
+
+## 18. Demo Flow
 
 The demo should present the system as a guided recruiter workflow.
 
-Demo Steps
-Recruiter uploads a CV
-Recruiter enters or selects the target job
-Recruiter pastes structured test results JSON
-Recruiter pastes interview feedback text
-Backend parses CV and scores profile/job fit
-Backend calls the interview parsing agent
-Backend validates test results and aggregates scores
-Backend fuses all processed data into a Candidate Assessment Object
-Backend calls the final synthesis agent
-Frontend displays the final standardized candidate report
-Demo UX Recommendation
+#### Demo Steps
+
+1. Recruiter uploads a CV
+2. Recruiter enters or selects the target job
+3. Recruiter pastes structured test results JSON
+4. Recruiter pastes interview feedback text
+5. Backend parses CV and scores profile/job fit
+6. Backend calls the interview parsing agent
+7. Backend validates test results and aggregates scores
+8. Backend fuses all processed data into a Candidate Assessment Object
+9. Backend calls the final synthesis agent
+10. Frontend displays the final standardized candidate report
+
+#### Demo UX Recommendation
 
 Show a pipeline timeline such as:
 
-CV parsed
-Profile scored
-Interview extracted
-Fusion completed
-Synthesis generated
+- ✅ CV parsed
+- ✅ Profile scored
+- ✅ Interview extracted
+- ✅ Fusion completed
+- ✅ Synthesis generated
 
-This makes the “agent” feel visible and intelligent during the demo.
+This makes the "agent" feel visible and intelligent during the demo.
 
-19. Key Engineering Principles
-Controlled AI
+---
+
+## 19. Key Engineering Principles
+
+#### Controlled AI
 
 The system does not let the model invent structure.
 All important structure is built before the final synthesis call.
 
-Explainability
+#### Explainability
 
 Every recommendation must be justified by evidence.
 
-Modularity
+#### Modularity
 
 Each stage can be tested independently:
+- CV scoring
+- test processing
+- interview extraction
+- fusion
+- synthesis
 
-CV scoring
-test processing
-interview extraction
-fusion
-synthesis
-Standardization
+#### Standardization
 
 All candidates are evaluated under the same schema and output format.
 
-20. MVP Scope
+---
+
+## 20. MVP Scope
 
 The MVP includes:
+- CV parsing and matching
+- JSON test processing
+- interview feedback parsing with LLM
+- weighted fusion
+- final synthesis generation
+- recruiter-facing UI
 
-CV parsing and matching
-JSON test processing
-interview feedback parsing with LLM
-weighted fusion
-final synthesis generation
-recruiter-facing UI
-21. Future Improvements
+---
+
+## 21. Future Improvements
 
 Potential extensions:
+- multiple interview aggregation
+- candidate comparison dashboard
+- bias flags
+- recruiter feedback loop
+- export to PDF
+- job-specific dynamic weighting
+- historical evaluation persistence
+- recruiter editable final report
 
-multiple interview aggregation
-candidate comparison dashboard
-bias flags
-recruiter feedback loop
-export to PDF
-job-specific dynamic weighting
-historical evaluation persistence
-recruiter editable final report
-22. Conclusion
+---
+
+## 22. Conclusion
 
 This project is not a generic chatbot.
 
 It is a structured AI recruitment pipeline that:
-
-ingests multiple candidate evaluation sources,
-converts them into normalized structured evidence,
-fuses them through weighted logic,
-generates a final explainable hiring-oriented synthesis.
+- ingests multiple candidate evaluation sources,
+- converts them into normalized structured evidence,
+- fuses them through weighted logic,
+- generates a final explainable hiring-oriented synthesis.
 
 The system is specifically designed for:
-
-consistency,
-transparency,
-recruiter usability,
-hackathon demo clarity,
-direct implementation by an AI coding assistant.
+- consistency,
+- transparency,
+- recruiter usability,
+- hackathon demo clarity,
+- direct implementation by an AI coding assistant.
