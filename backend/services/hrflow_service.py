@@ -12,9 +12,9 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
-HRFLOW_API_KEY = os.getenv("HRFLOW_API_KEY", "ask_0872d997021a7d86557cde47f5f66e36")
-HRFLOW_USER_EMAIL = os.getenv("HRFLOW_USER_EMAIL", "")
-HRFLOW_SOURCE_KEY = os.getenv("HRFLOW_SOURCE_KEY", "")
+HRFLOW_API_KEY = os.getenv("HRFLOW_API_KEY", "ask_d2055968eae428d9444f5de212e9d516")
+HRFLOW_USER_EMAIL = os.getenv("HRFLOW_USER_EMAIL", "recruiter@example.com")
+HRFLOW_SOURCE_KEY = os.getenv("HRFLOW_SOURCE_KEY", "da13ffd3b3fe72839848d91144b4e39d5cba2819")
 
 BASE_URL = "https://api.hrflow.ai/v1"
 
