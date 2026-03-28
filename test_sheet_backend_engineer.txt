@@ -1,0 +1,80 @@
+====================================================
+TECHNICAL EVALUATION FORM
+Position: Backend Engineer (Junior)
+Candidate: Nabil Marc Chartouni
+Evaluator: Marc Dupont
+Date: 2026-03-28
+====================================================
+
+--- SECTION 1: TECHNICAL SKILLS ---
+
+1. Python — object-oriented programming and data structures
+   Score: 4 / 5
+   Notes: Good grasp of classes and modules. Minor gaps in decorators.
+
+2. SQL & databases — queries, joins, normalization
+   Score: 3 / 5
+   Notes: Handles standard queries well. Complex subqueries need improvement.
+
+3. System design & architecture
+   Score: 2 / 5
+   Notes: Struggles with distributed systems and scalability concepts.
+
+4. REST API development
+   Score: 4 / 5
+   Notes: Comfortable with FastAPI and Django REST. Good understanding of HTTP.
+
+5. Docker & containerization
+   Score: 4 / 5
+   Notes: Can write Dockerfiles and Docker Compose. Used in DevOps project.
+
+6. CI/CD pipelines
+   Score: 4 / 5
+   Notes: Experience with GitLab CI. Set up pipelines in academic project.
+
+7. Git & version control
+   Score: 5 / 5
+   Notes: Solid daily Git usage, branching strategy, merge conflicts.
+
+8. Frontend basics (React / TypeScript)
+   Score: 3 / 5
+   Notes: Built React frontend once. Needs more experience with state management.
+
+--- SECTION 2: SOFT SKILLS ---
+
+9. Communication & clarity of explanation
+   Score: 4 / 5
+   Notes: Explains concepts clearly. Good verbal and written communication.
+
+10. Teamwork & collaboration
+    Score: 5 / 5
+    Notes: Worked in team on multiple projects. Mentioned leadership certificate.
+
+11. Problem-solving under pressure
+    Score: 3 / 5
+    Notes: Reasonable but hesitates on unfamiliar problems.
+
+12. Learning agility
+    Score: 4 / 5
+    Notes: Picks up new technologies quickly. Proactive in learning.
+
+--- SECTION 3: MOTIVATION ---
+
+13. Interest in backend development role
+    Score: 5 / 5
+    Notes: Clearly motivated. Mentioned personal backend projects.
+
+14. Company culture fit
+    Score: 4 / 5
+    Notes: Values collaboration and impact. Good cultural alignment.
+
+15. Career goals alignment
+    Score: 4 / 5
+    Notes: Goals align with the role. Looking for hands-on engineering experience.
+
+====================================================
+OVERALL EVALUATOR COMMENT:
+Strong junior profile with a solid foundation in backend development and DevOps.
+System design is the main gap. Highly motivated and communicates well.
+Recommended for technical interview follow-up.
+====================================================
