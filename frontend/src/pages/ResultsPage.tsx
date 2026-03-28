@@ -261,36 +261,6 @@ export default function ResultsPage({ result, onReset }: Props) {
         </div>
       </div>
 
-      {/* ── 7. INTERVIEW SIGNALS ─────────────────────────────────────────── */}
-      <div className="card">
-        <p className="section-title mb-2">
-          Interview signals
-          <span className="ml-2 font-normal normal-case text-slate-400 text-xs">
-            {a.interview_assessment.interview_type.replace(/_/g, ' ')}
-          </span>
-        </p>
-        <div className="flex flex-wrap gap-4 mb-3">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-slate-500">Motivation</span>
-            <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold border
-              ${a.interview_assessment.extracted_signals.motivation_signal === 'high'
-                ? 'bg-green-50 text-green-700 border-green-200'
-                : a.interview_assessment.extracted_signals.motivation_signal === 'medium'
-                ? 'bg-amber-50 text-amber-700 border-amber-200'
-                : 'bg-red-50 text-red-600 border-red-200'}`}>
-              {a.interview_assessment.extracted_signals.motivation_signal}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-slate-500">Psychological</span>
-            <span className="rounded-full px-2.5 py-0.5 text-xs font-semibold border bg-slate-50 text-slate-600 border-slate-200">
-              {a.interview_assessment.extracted_signals.psychological_signal}
-            </span>
-          </div>
-        </div>
-        <p className="text-sm text-slate-600 leading-relaxed">{a.interview_assessment.summary}</p>
-      </div>
-
       {/* ── 8. CONSISTENCY & JUSTIFICATION ──────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="card">
