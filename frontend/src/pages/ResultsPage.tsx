@@ -249,38 +249,16 @@ export default function ResultsPage({ result, onReset }: Props) {
         </div>
       )}
 
-      {/* ── 6. TECHNICAL & BEHAVIORAL ───────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="card">
-          <p className="section-title mb-1">Technical assessment</p>
-          <p className="text-sm text-slate-600 leading-relaxed">{r.technical_assessment}</p>
-        </div>
-        <div className="card">
-          <p className="section-title mb-1">Behavioural & motivation</p>
-          <p className="text-sm text-slate-600 leading-relaxed">{r.behavioral_assessment}</p>
-        </div>
+      {/* ── 6. BEHAVIORAL ───────────────────────────────────────────────── */}
+      <div className="card">
+        <p className="section-title mb-1">Behavioural & motivation</p>
+        <p className="text-sm text-slate-600 leading-relaxed">{r.behavioral_assessment}</p>
       </div>
 
-      {/* ── 8. CONSISTENCY & JUSTIFICATION ──────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="card">
-          <p className="section-title mb-2">Consistency analysis</p>
-          <p className="text-sm text-slate-600 mb-3">{r.consistency_analysis}</p>
-          {a.fusion_summary.consistency_flags.length > 0 && (
-            <div className="space-y-1.5">
-              {a.fusion_summary.consistency_flags.map((flag, i) => (
-                <div key={i} className="flex items-start gap-2 text-xs text-slate-600">
-                  <span className="mt-0.5 text-blue-400">◆</span>
-                  {flag}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="card bg-slate-50 border-slate-200">
-          <p className="section-title mb-2">Justification</p>
-          <p className="text-sm text-slate-700 leading-relaxed">{r.justification}</p>
-        </div>
+      {/* ── 8. JUSTIFICATION ─────────────────────────────────────────────── */}
+      <div className="card bg-slate-50 border-slate-200">
+        <p className="section-title mb-2">Justification</p>
+        <p className="text-sm text-slate-700 leading-relaxed line-clamp-4">{r.justification}</p>
       </div>
 
       {/* ── 9. RECOMMENDED NEXT STEPS ───────────────────────────────────── */}
