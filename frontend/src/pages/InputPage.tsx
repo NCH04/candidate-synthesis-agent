@@ -1,4 +1,4 @@
-import { useState, useRef, DragEvent, ChangeEvent } from 'react'
+import { useState, useRef, RefObject, DragEvent, ChangeEvent } from 'react'
 import { FormValues, InterviewType } from '../types'
 
 const INTERVIEW_TYPES: { value: InterviewType; label: string }[] = [
@@ -291,7 +291,7 @@ interface DropZoneProps {
   dragging: boolean
   accept: string
   hint: string
-  inputRef: React.RefObject<HTMLInputElement>
+  inputRef: RefObject<HTMLInputElement>
   onDragOver: () => void
   onDragLeave: () => void
   onDrop: (e: DragEvent<HTMLDivElement>) => void
