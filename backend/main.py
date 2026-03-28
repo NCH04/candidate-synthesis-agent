@@ -25,24 +25,21 @@ try:
     from .schemas import InterviewInput
     from .services.fusion_service import build_fusion_object
     from .services.hrflow_service import parse_and_score, parse_cv
-    from .services.jobs_service import get_jobs, load_jobs
+    from .services.jobs_service import get_jobs, load_jobs_from_file
     from .services.llm_service import extract_interview_signals, generate_synthesis
 except ImportError:
     from schemas import InterviewInput
     from services.fusion_service import build_fusion_object
     from services.hrflow_service import parse_and_score, parse_cv
-    from services.jobs_service import get_jobs, load_jobs
+    from services.jobs_service import get_jobs, load_jobs_from_file
     from services.llm_service import extract_interview_signals, generate_synthesis, parse_test_sheet
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load jobs cache from HrFlow on startup."""
-    try:
-        await load_jobs()
-    except Exception as exc:
-        print(f"[startup] Could not load jobs cache: {exc}")
-    yield  # app runs here
+    """Load jobs from local JSON file on startup."""
+    load_jobs_from_file()
+    yield
 
 
 app = FastAPI(title="AI Candidate Synthesis Agent", version="1.0.0", lifespan=lifespan)

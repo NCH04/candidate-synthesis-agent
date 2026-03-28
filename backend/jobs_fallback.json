@@ -1,0 +1,26 @@
+[
+  {
+    "key": "391db21d-fc9f-4db5-b281-ff8005548735",
+    "title": "Senior Python Backend Engineer",
+    "skills": ["docker", "fastapi", "postgresql", "rest apis"],
+    "summary": "Senior backend engineer role focused on Python, FastAPI microservices, PostgreSQL and containerized deployments."
+  },
+  {
+    "key": "a7c142e8-3d21-4f90-b6e5-cc9012345678",
+    "title": "Full Stack Developer",
+    "skills": ["react", "typescript", "node.js", "postgresql", "rest apis"],
+    "summary": "Full stack developer building modern web applications with React frontend and Node.js backend."
+  },
+  {
+    "key": "b2d389fa-91cc-4a77-8f31-dd4456789abc",
+    "title": "DevOps Engineer",
+    "skills": ["docker", "kubernetes", "ci/cd", "gitlab", "prometheus", "linux"],
+    "summary": "DevOps engineer responsible for CI/CD pipelines, container orchestration and infrastructure monitoring."
+  },
+  {
+    "key": "c4e501bc-77ab-4b88-9e42-ee5567890def",
+    "title": "Data Engineer",
+    "skills": ["python", "sql", "spark", "airflow", "postgresql", "data pipelines"],
+    "summary": "Data engineer designing and maintaining scalable data pipelines and analytics infrastructure."
+  }
+]
