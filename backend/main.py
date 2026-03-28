@@ -26,13 +26,13 @@ try:
     from .services.fusion_service import build_fusion_object
     from .services.hrflow_service import parse_and_score, parse_cv
     from .services.jobs_service import get_jobs, load_jobs_from_file
-    from .services.llm_service import extract_interview_signals, generate_synthesis
+    from .services.llm_service import extract_candidate_name, extract_interview_signals, generate_synthesis
 except ImportError:
     from schemas import InterviewInput
     from services.fusion_service import build_fusion_object
     from services.hrflow_service import parse_and_score, parse_cv
     from services.jobs_service import get_jobs, load_jobs_from_file
-    from services.llm_service import extract_interview_signals, generate_synthesis, parse_test_sheet
+    from services.llm_service import extract_candidate_name, extract_interview_signals, generate_synthesis, parse_test_sheet
 
 
 @asynccontextmanager
@@ -65,7 +65,9 @@ async def parse_cv_endpoint(
     """
     Receive a CV file, forward it to HrFlow, return structured profile data.
     Uses HrFlow POST /v1/profile/parsing/file.
+    Name is extracted independently via LLM to avoid HrFlow name parsing bugs.
     """
+    import io
     content = await file.read()
     try:
         result = await parse_cv(
@@ -77,9 +79,27 @@ async def parse_cv_endpoint(
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"HrFlow parsing failed: {exc}")
 
+    # Extract candidate name via LLM from raw PDF text (more reliable than HrFlow)
+    full_name = result["full_name"]
+    try:
+        filename_lower = (file.filename or "").lower()
+        if filename_lower.endswith(".pdf") or file.content_type == "application/pdf":
+            from pypdf import PdfReader
+            reader = PdfReader(io.BytesIO(content))
+            cv_text = "\n".join(p.extract_text() or "" for p in reader.pages)
+        else:
+            cv_text = content.decode("utf-8", errors="ignore")
+
+        if cv_text.strip():
+            llm_name = await extract_candidate_name(cv_text)
+            if llm_name:
+                full_name = llm_name
+    except Exception:
+        pass  # keep HrFlow name as fallback
+
     return {
         "profile_key": result["profile_key"],
-        "full_name":   result["full_name"],
+        "full_name":   full_name,
         "first_name":  result["first_name"],
         "last_name":   result["last_name"],
         "skills": result["skills"],
