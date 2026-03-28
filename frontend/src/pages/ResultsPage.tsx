@@ -133,6 +133,14 @@ export default function ResultsPage({ result, onReset }: Props) {
         </div>
       </div>
 
+      {/* Domain Fit */}
+      {r.domain_fit && (
+        <div className="card border-l-4 border-l-blue-400">
+          <p className="section-title text-blue-600">Domain fit</p>
+          <p className="text-sm text-slate-700 leading-relaxed">{r.domain_fit}</p>
+        </div>
+      )}
+
       {/* Strengths / Weaknesses / Risks */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="card">
@@ -209,21 +217,7 @@ export default function ResultsPage({ result, onReset }: Props) {
             psychological: <span className="font-medium">{a.interview_assessment.extracted_signals.psychological_signal}</span>
           </span>
         </p>
-        <p className="text-sm text-slate-600 mb-4">{a.interview_assessment.summary}</p>
-        <div className="grid grid-cols-3 gap-4">
-          <div>
-            <p className="text-xs font-medium text-green-600 mb-1.5">Strengths</p>
-            <TagList items={a.interview_assessment.extracted_signals.strengths} variant="green" />
-          </div>
-          <div>
-            <p className="text-xs font-medium text-red-500 mb-1.5">Weaknesses</p>
-            <TagList items={a.interview_assessment.extracted_signals.weaknesses} variant="red" />
-          </div>
-          <div>
-            <p className="text-xs font-medium text-amber-500 mb-1.5">Risks</p>
-            <TagList items={a.interview_assessment.extracted_signals.risks} variant="amber" />
-          </div>
-        </div>
+        <p className="text-sm text-slate-600">{a.interview_assessment.summary}</p>
       </div>
 
       {/* Consistency analysis */}

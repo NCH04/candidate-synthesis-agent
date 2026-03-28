@@ -148,6 +148,8 @@ Rules:
 - decision must be one of: Hire, Consider, No Hire
 - confidence_level must be one of: High, Medium, Low
 - overall_score must be a float between 0.0 and 1.0
+- domain_fit: 2-3 sentences describing in which specific job domains/roles this candidate would excel, \
+which skills they can apply immediately, and the recommended role type.
 - Return ONLY valid JSON with the exact keys shown below, nothing else.
 
 Expected JSON:
@@ -162,9 +164,44 @@ Expected JSON:
   "technical_assessment": "...",
   "behavioral_assessment": "...",
   "consistency_analysis": "...",
-  "justification": "..."
+  "justification": "...",
+  "domain_fit": "Strong fit for Backend Development and DevOps roles. Can contribute immediately on CI/CD pipelines and API development. Recommended entry point: Junior Backend Engineer."
 }
 """
+
+# ---------------------------------------------------------------------------
+# Agent 0 — Test Sheet Parsing Agent
+# ---------------------------------------------------------------------------
+
+TEST_PARSE_SYSTEM_PROMPT = """\
+You are an AI technical test evaluator.
+
+You receive the text content of a technical test sheet or evaluation form.
+Your task is to extract the competencies that were evaluated and normalize the scores to a 1-5 scale.
+
+Rules:
+- Extract all evaluated competencies and their scores.
+- Normalize scores to a 1-5 integer scale (1=weak, 2=insufficient, 3=acceptable, 4=good, 5=excellent).
+- Group competency keys as: "technical.<skill>", "soft.<skill>", or "motivation.<skill>".
+- target_skills: list of clean skill names (no prefix) found in the test.
+- Return ONLY valid JSON with the exact keys shown below, nothing else.
+
+Expected JSON:
+{
+  "scores": {
+    "technical.python": 4,
+    "soft.communication": 3,
+    "motivation.role_interest": 5
+  },
+  "target_skills": ["Python", "Communication", "Role interest"]
+}
+"""
+
+
+async def parse_test_sheet(file_text: str) -> Dict[str, Any]:
+    """Call the configured LLM to extract structured scores from a test sheet."""
+    raw = await _chat(TEST_PARSE_SYSTEM_PROMPT, file_text)
+    return json.loads(_strip_fences(raw))
 
 
 async def generate_synthesis(assessment_object: Dict[str, Any]) -> Dict[str, Any]:

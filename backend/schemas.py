@@ -120,3 +120,4 @@ class CandidateSynthesisReport(BaseModel):
     behavioral_assessment: str
     consistency_analysis: str
     justification: str
+    domain_fit: str

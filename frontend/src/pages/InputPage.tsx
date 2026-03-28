@@ -1,24 +1,17 @@
 import { useState, useRef, DragEvent, ChangeEvent } from 'react'
 import { FormValues, InterviewType } from '../types'
 
-const DEFAULT_TEST_JSON = JSON.stringify(
-  {
-    'technical.python': 4,
-    'technical.sql': 3,
-    'technical.system_design': 2,
-    'soft.communication': 4,
-    'motivation.role_interest': 5,
-  },
-  null,
-  2,
-)
-
 const INTERVIEW_TYPES: { value: InterviewType; label: string }[] = [
   { value: 'technical_interview', label: 'Technical Interview' },
   { value: 'hr_interview', label: 'HR Interview' },
   { value: 'manager_interview', label: 'Manager Interview' },
   { value: 'assessment_review', label: 'Assessment Review' },
 ]
+
+interface ParsedTest {
+  scores: Record<string, number>
+  target_skills: string[]
+}
 
 interface Props {
   onSubmit: (form: FormValues) => void
@@ -34,38 +27,65 @@ export default function InputPage({ onSubmit }: Props) {
     sourceKey: '',
     targetSkills: '',
     cvFile: null,
-    testResultsJson: DEFAULT_TEST_JSON,
+    testFile: null,
+    testResultsJson: '',
     interviewType: 'technical_interview',
     reviewText: '',
   })
-  const [dragging, setDragging] = useState(false)
-  const [jsonError, setJsonError] = useState<string | null>(null)
+  const [cvDragging, setCvDragging] = useState(false)
+  const [testDragging, setTestDragging] = useState(false)
+  const [testParsed, setTestParsed] = useState<ParsedTest | null>(null)
+  const [testParsing, setTestParsing] = useState(false)
+  const [testParseError, setTestParseError] = useState<string | null>(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const cvInputRef = useRef<HTMLInputElement>(null)
+  const testInputRef = useRef<HTMLInputElement>(null)
 
   function set(key: keyof FormValues, value: string | File | null) {
     setForm((f) => ({ ...f, [key]: value }))
   }
 
-  function handleFileAccept(file: File) {
-    set('cvFile', file)
-  }
+  async function handleTestFileAccept(file: File) {
+    set('testFile', file)
+    setTestParsed(null)
+    setTestParseError(null)
+    setTestParsing(true)
 
-  function handleDrop(e: DragEvent<HTMLDivElement>) {
-    e.preventDefault()
-    setDragging(false)
-    const file = e.dataTransfer.files[0]
-    if (file) handleFileAccept(file)
-  }
-
-  function handleJsonChange(val: string) {
-    set('testResultsJson', val)
     try {
-      JSON.parse(val)
-      setJsonError(null)
-    } catch {
-      setJsonError('Invalid JSON')
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch('/api/test/parse', { method: 'POST', body: fd })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }))
+        throw new Error(err.detail || 'Parse failed')
+      }
+      const data: ParsedTest = await res.json()
+      setTestParsed(data)
+      setForm((f) => ({
+        ...f,
+        testFile: file,
+        testResultsJson: JSON.stringify(data.scores),
+        targetSkills: data.target_skills.join(', '),
+      }))
+    } catch (e: any) {
+      setTestParseError(e.message || 'Could not parse test sheet')
+    } finally {
+      setTestParsing(false)
     }
+  }
+
+  function handleCvDrop(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault()
+    setCvDragging(false)
+    const file = e.dataTransfer.files[0]
+    if (file) set('cvFile', file)
+  }
+
+  function handleTestDrop(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault()
+    setTestDragging(false)
+    const file = e.dataTransfer.files[0]
+    if (file) handleTestFileAccept(file)
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -78,7 +98,7 @@ export default function InputPage({ onSubmit }: Props) {
     form.jobTitle.trim() !== '' &&
     form.testResultsJson.trim() !== '' &&
     form.reviewText.trim() !== '' &&
-    jsonError === null
+    !testParsing
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -107,83 +127,80 @@ export default function InputPage({ onSubmit }: Props) {
           {/* Job */}
           <div className="card">
             <p className="section-title">Target job</p>
-            <div className="space-y-4">
-              <div>
-                <label className="label">Job title <span className="text-red-400">*</span></label>
-                <input className="input-field" placeholder="Backend Engineer" required
-                  value={form.jobTitle} onChange={e => set('jobTitle', e.target.value)} />
-              </div>
-              <div>
-                <label className="label">Target skills
-                  <span className="ml-1 text-xs font-normal text-slate-400">(comma-separated)</span>
-                </label>
-                <input className="input-field" placeholder="Python, SQL, FastAPI, Docker"
-                  value={form.targetSkills} onChange={e => set('targetSkills', e.target.value)} />
-              </div>
+            <div>
+              <label className="label">Job title <span className="text-red-400">*</span></label>
+              <input className="input-field" placeholder="Backend Engineer" required
+                value={form.jobTitle} onChange={e => set('jobTitle', e.target.value)} />
             </div>
           </div>
 
           {/* CV Upload */}
           <div className="card">
             <p className="section-title">Resume / CV <span className="text-red-400">*</span></p>
-            <div
-              className={`relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed
-                          px-6 py-8 text-center cursor-pointer transition-colors
-                          ${dragging ? 'border-brand-500 bg-brand-50' : 'border-slate-300 hover:border-brand-400 hover:bg-slate-50'}`}
-              onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
-              onDragLeave={() => setDragging(false)}
-              onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <input ref={fileInputRef} type="file" className="hidden"
-                accept=".pdf,.doc,.docx,.txt"
-                onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                  const f = e.target.files?.[0]
-                  if (f) handleFileAccept(f)
-                }} />
-              {form.cvFile ? (
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-brand-100 flex items-center justify-center">
-                    <svg className="w-5 h-5 text-brand-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z" />
-                    </svg>
-                  </div>
-                  <div className="text-left">
-                    <p className="text-sm font-medium text-slate-700">{form.cvFile.name}</p>
-                    <p className="text-xs text-slate-400">{(form.cvFile.size / 1024).toFixed(0)} KB — click to change</p>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <svg className="w-8 h-8 text-slate-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                      d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                  </svg>
-                  <p className="text-sm font-medium text-slate-600">Drop your CV here or click to browse</p>
-                  <p className="text-xs text-slate-400 mt-1">PDF, DOCX, DOC — max 10 MB</p>
-                </>
-              )}
-            </div>
+            <DropZone
+              file={form.cvFile}
+              dragging={cvDragging}
+              accept=".pdf,.doc,.docx,.txt"
+              hint="PDF, DOCX — max 10 MB"
+              inputRef={cvInputRef}
+              onDragOver={() => setCvDragging(true)}
+              onDragLeave={() => setCvDragging(false)}
+              onDrop={handleCvDrop}
+              onFileChange={f => set('cvFile', f)}
+            />
           </div>
         </div>
 
         {/* Right column */}
         <div className="space-y-6">
 
-          {/* Test results */}
+          {/* Test sheet upload */}
           <div className="card">
-            <div className="flex items-start justify-between mb-3">
-              <p className="section-title mb-0">Test results <span className="text-red-400">*</span></p>
-              <span className="text-xs text-slate-400">Keys: category.skill, scores 1–5</span>
-            </div>
-            <textarea
-              className={`input-field font-mono text-xs h-40 resize-none ${jsonError ? 'border-red-400 focus:border-red-400 focus:ring-red-300/20' : ''}`}
-              value={form.testResultsJson}
-              onChange={e => handleJsonChange(e.target.value)}
-              spellCheck={false}
+            <p className="section-title">
+              Technical test sheet <span className="text-red-400">*</span>
+              <span className="ml-2 font-normal normal-case text-xs text-slate-400">
+                PDF or text — skills & scores extracted automatically
+              </span>
+            </p>
+            <DropZone
+              file={form.testFile}
+              dragging={testDragging}
+              accept=".pdf,.txt,.md,.csv"
+              hint="PDF or text file — scores parsed by AI"
+              inputRef={testInputRef}
+              onDragOver={() => setTestDragging(true)}
+              onDragLeave={() => setTestDragging(false)}
+              onDrop={handleTestDrop}
+              onFileChange={handleTestFileAccept}
+              loading={testParsing}
             />
-            {jsonError && <p className="mt-1 text-xs text-red-500">{jsonError}</p>}
+
+            {/* Parse result preview */}
+            {testParsing && (
+              <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
+                <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                </svg>
+                Parsing test sheet…
+              </div>
+            )}
+            {testParseError && (
+              <p className="mt-2 text-xs text-red-500">{testParseError}</p>
+            )}
+            {testParsed && !testParsing && (
+              <div className="mt-3 rounded-lg bg-green-50 border border-green-200 p-3 space-y-2">
+                <p className="text-xs font-medium text-green-700">Detected {Object.keys(testParsed.scores).length} competencies</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {Object.entries(testParsed.scores).map(([k, v]) => (
+                    <span key={k} className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-white px-2 py-0.5 text-xs text-slate-600">
+                      <span className="font-medium">{k.split('.').pop()}</span>
+                      <span className="text-green-600 font-semibold">{v}/5</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Interview */}
@@ -262,5 +279,72 @@ export default function InputPage({ onSubmit }: Props) {
         </button>
       </div>
     </form>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Reusable drop-zone component
+// ---------------------------------------------------------------------------
+
+interface DropZoneProps {
+  file: File | null
+  dragging: boolean
+  accept: string
+  hint: string
+  inputRef: React.RefObject<HTMLInputElement>
+  onDragOver: () => void
+  onDragLeave: () => void
+  onDrop: (e: DragEvent<HTMLDivElement>) => void
+  onFileChange: (f: File) => void
+  loading?: boolean
+}
+
+function DropZone({ file, dragging, accept, hint, inputRef, onDragOver, onDragLeave, onDrop, onFileChange, loading }: DropZoneProps) {
+  return (
+    <div
+      className={`relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed
+                  px-6 py-8 text-center cursor-pointer transition-colors
+                  ${dragging ? 'border-brand-500 bg-brand-50' : 'border-slate-300 hover:border-brand-400 hover:bg-slate-50'}`}
+      onDragOver={(e) => { e.preventDefault(); onDragOver() }}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      onClick={() => inputRef.current?.click()}
+    >
+      <input ref={inputRef} type="file" className="hidden" accept={accept}
+        onChange={(e: ChangeEvent<HTMLInputElement>) => {
+          const f = e.target.files?.[0]
+          if (f) onFileChange(f)
+        }} />
+      {file ? (
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-brand-100 flex items-center justify-center">
+            {loading ? (
+              <svg className="w-5 h-5 text-brand-600 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+              </svg>
+            ) : (
+              <svg className="w-5 h-5 text-brand-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z" />
+              </svg>
+            )}
+          </div>
+          <div className="text-left">
+            <p className="text-sm font-medium text-slate-700">{file.name}</p>
+            <p className="text-xs text-slate-400">{(file.size / 1024).toFixed(0)} KB — click to change</p>
+          </div>
+        </div>
+      ) : (
+        <>
+          <svg className="w-8 h-8 text-slate-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+              d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+          </svg>
+          <p className="text-sm font-medium text-slate-600">Drop file here or click to browse</p>
+          <p className="text-xs text-slate-400 mt-1">{hint}</p>
+        </>
+      )}
+    </div>
   )
 }
