@@ -1,0 +1,68 @@
+====================================================
+TECHNICAL EVALUATION FORM
+Position: Full Stack Developer
+Candidate: Nabil Marc Chartouni
+Evaluator: Sophie Martin
+Date: 2026-03-28
+====================================================
+
+--- SECTION 1: TECHNICAL SKILLS ---
+
+1. React — components, hooks, state management
+   Score: 4 / 5
+   Notes: Comfortable with functional components and hooks. Limited Redux experience.
+
+2. TypeScript — typing, interfaces, generics
+   Score: 3 / 5
+   Notes: Handles basic typing well. Struggles with advanced generics.
+
+3. Node.js — REST API, Express, async patterns
+   Score: 3 / 5
+   Notes: Built APIs in Java, adapting to Node.js. Solid understanding of async/await.
+
+4. PostgreSQL — queries, relations, indexing
+   Score: 3 / 5
+   Notes: Good SQL fundamentals. Limited experience with complex joins and indexes.
+
+5. REST APIs — design, HTTP methods, status codes
+   Score: 5 / 5
+   Notes: Very strong. Designed and consumed REST APIs in multiple projects.
+
+6. Git — branching, pull requests, merge conflicts
+   Score: 5 / 5
+   Notes: Daily Git usage, clean commit history, experienced with team workflows.
+
+--- SECTION 2: SOFT SKILLS ---
+
+7. Communication — clarity, written and verbal
+   Score: 4 / 5
+   Notes: Explains clearly, good written communication. Comfortable in English.
+
+8. Adaptability — handles new tech and feedback
+   Score: 4 / 5
+   Notes: Picked up React and FastAPI quickly for hackathon. Open to feedback.
+
+9. Teamwork — collaboration, pair programming
+   Score: 5 / 5
+   Notes: Strong team player. Led coordination in group projects at EPITA.
+
+10. Creativity — initiative and problem-solving approach
+    Score: 3 / 5
+    Notes: Follows specs well, but less proactive in proposing alternative solutions.
+
+--- SECTION 3: MOTIVATION ---
+
+11. Interest in full stack development
+    Score: 5 / 5
+    Notes: Clearly motivated. Built full stack app (bookstore) as personal project.
+
+12. Interest in the company and role
+    Score: 4 / 5
+    Notes: Well-informed about the company. Asking relevant questions about the stack.
+
+====================================================
+OVERALL EVALUATOR COMMENT:
+Solid junior full stack profile with strong REST API and Git skills.
+React and TypeScript are good but could deepen. Excellent team player,
+highly motivated. Recommended for next round.
+====================================================
