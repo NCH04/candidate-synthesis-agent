@@ -1,9 +1,10 @@
-import { useState } from 'react'
-import { FormValues, PipelineResult } from './types'
+import { useState, useEffect } from 'react'
+import { FormValues, JobOption, PipelineResult } from './types'
 import InputPage from './pages/InputPage'
 import ProcessingPage from './pages/ProcessingPage'
 import ResultsPage from './pages/ResultsPage'
 import { runFullPipeline } from './api/pipeline'
+import { fetchJobs } from './api/jobs'
 
 type View = 'input' | 'processing' | 'results'
 
@@ -11,6 +12,11 @@ export default function App() {
   const [view, setView] = useState<View>('input')
   const [result, setResult] = useState<PipelineResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [jobs, setJobs] = useState<JobOption[]>([])
+
+  useEffect(() => {
+    fetchJobs().then(setJobs)
+  }, [])
 
   async function handleSubmit(form: FormValues) {
     setError(null)
@@ -93,7 +99,7 @@ export default function App() {
           </div>
         )}
 
-        {view === 'input' && <InputPage onSubmit={handleSubmit} />}
+        {view === 'input' && <InputPage onSubmit={handleSubmit} jobs={jobs} />}
         {view === 'processing' && <ProcessingPage />}
         {view === 'results' && result && (
           <ResultsPage result={result} onReset={handleReset} />
