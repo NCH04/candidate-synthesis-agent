@@ -204,6 +204,31 @@ async def parse_test_sheet(file_text: str) -> Dict[str, Any]:
     return json.loads(_strip_fences(raw))
 
 
+# ---------------------------------------------------------------------------
+# Agent 0b — Candidate Name Extractor (bypasses HrFlow name parsing bugs)
+# ---------------------------------------------------------------------------
+
+NAME_EXTRACT_PROMPT = """\
+You are a CV parser. Extract only the candidate's full name from the CV text below.
+
+Rules:
+- Return ONLY the full name as plain text (e.g. "Nabil Marc Chartouni").
+- Correct capitalisation (First Last format).
+- Do NOT return JSON, labels, or any other text — just the name.
+- If you cannot determine the name, return an empty string.
+"""
+
+
+async def extract_candidate_name(cv_text: str) -> str:
+    """Use the LLM to extract the candidate's full name from raw CV text."""
+    # Only send the first 800 chars — the name is always near the top
+    snippet = cv_text[:800].strip()
+    if not snippet:
+        return ""
+    raw = await _chat(NAME_EXTRACT_PROMPT, snippet)
+    return raw.strip()
+
+
 async def generate_synthesis(assessment_object: Dict[str, Any]) -> Dict[str, Any]:
     """Call the configured LLM to generate the final candidate synthesis report."""
     payload = json.dumps(assessment_object, indent=2, ensure_ascii=False)
