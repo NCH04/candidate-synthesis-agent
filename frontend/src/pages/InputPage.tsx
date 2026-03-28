@@ -1,5 +1,5 @@
-import { useState, useRef, RefObject, DragEvent, ChangeEvent } from 'react'
-import { FormValues, InterviewType } from '../types'
+import { useState, useRef, useEffect, RefObject, DragEvent, ChangeEvent } from 'react'
+import { FormValues, InterviewType, JobOption } from '../types'
 
 const INTERVIEW_TYPES: { value: InterviewType; label: string }[] = [
   { value: 'technical_interview', label: 'Technical Interview' },
@@ -15,9 +15,10 @@ interface ParsedTest {
 
 interface Props {
   onSubmit: (form: FormValues) => void
+  jobs: JobOption[]
 }
 
-export default function InputPage({ onSubmit }: Props) {
+export default function InputPage({ onSubmit, jobs }: Props) {
   const [form, setForm] = useState<FormValues>({
     candidateName: '',
     candidateId: '',
@@ -41,8 +42,41 @@ export default function InputPage({ onSubmit }: Props) {
   const [testParsing, setTestParsing] = useState(false)
   const [testParseError, setTestParseError] = useState<string | null>(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [jobQuery, setJobQuery] = useState('')
+  const [jobDropdownOpen, setJobDropdownOpen] = useState(false)
+  const [selectedJob, setSelectedJob] = useState<JobOption | null>(null)
   const cvInputRef = useRef<HTMLInputElement>(null)
   const testInputRef = useRef<HTMLInputElement>(null)
+  const jobInputRef = useRef<HTMLInputElement>(null)
+
+  const filteredJobs = jobs.filter(j =>
+    j.title.toLowerCase().includes(jobQuery.toLowerCase())
+  )
+
+  function handleJobSelect(job: JobOption) {
+    setSelectedJob(job)
+    setJobQuery(job.title)
+    setJobDropdownOpen(false)
+    setForm(f => ({ ...f, jobTitle: job.title, jobId: job.key }))
+  }
+
+  function handleJobQueryChange(val: string) {
+    setJobQuery(val)
+    setJobDropdownOpen(true)
+    setSelectedJob(null)
+    setForm(f => ({ ...f, jobTitle: val, jobId: '' }))
+  }
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (jobInputRef.current && !jobInputRef.current.closest('.job-autocomplete')?.contains(e.target as Node)) {
+        setJobDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
 
   function set(key: keyof FormValues, value: string | File | null) {
     setForm((f) => ({ ...f, [key]: value }))
@@ -186,14 +220,67 @@ export default function InputPage({ onSubmit }: Props) {
             </div>
           </div>
 
-          {/* Job */}
+          {/* Job — autocomplete */}
           <div className="card">
             <p className="section-title">Target job</p>
-            <div>
-              <label className="label">Job title <span className="text-red-400">*</span></label>
-              <input className="input-field" placeholder="Backend Engineer" required
-                value={form.jobTitle} onChange={e => set('jobTitle', e.target.value)} />
+            <div className="job-autocomplete relative">
+              <label className="label">
+                Job title <span className="text-red-400">*</span>
+                {jobs.length > 0 && (
+                  <span className="ml-2 text-xs font-normal text-slate-400">{jobs.length} jobs available</span>
+                )}
+              </label>
+              <input
+                ref={jobInputRef}
+                className={`input-field ${selectedJob ? 'border-brand-400' : ''}`}
+                placeholder={jobs.length === 0 ? 'Loading jobs…' : 'Type to search a job…'}
+                value={jobQuery}
+                onChange={e => handleJobQueryChange(e.target.value)}
+                onFocus={() => setJobDropdownOpen(true)}
+                autoComplete="off"
+              />
+              {/* Dropdown */}
+              {jobDropdownOpen && filteredJobs.length > 0 && (
+                <ul className="absolute z-20 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow-lg max-h-48 overflow-y-auto">
+                  {filteredJobs.map(job => (
+                    <li
+                      key={job.key}
+                      className="flex flex-col px-3 py-2.5 cursor-pointer hover:bg-brand-50 border-b border-slate-50 last:border-0"
+                      onMouseDown={() => handleJobSelect(job)}
+                    >
+                      <span className="text-sm font-medium text-slate-700">{job.title}</span>
+                      {job.skills.length > 0 && (
+                        <span className="text-xs text-slate-400 mt-0.5 truncate">
+                          {job.skills.slice(0, 5).join(' · ')}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {jobDropdownOpen && jobQuery.length > 0 && filteredJobs.length === 0 && (
+                <div className="absolute z-20 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow px-3 py-2 text-xs text-slate-400">
+                  No matching job found
+                </div>
+              )}
             </div>
+
+            {/* Required skills hint */}
+            {selectedJob && selectedJob.skills.length > 0 && (
+              <div className="mt-3 rounded-lg bg-brand-50 border border-brand-100 p-3">
+                <p className="text-xs font-medium text-brand-700 mb-1.5">
+                  Required skills for this position
+                  <span className="ml-1 font-normal text-brand-500">— your test sheet should cover these</span>
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedJob.skills.map((skill, i) => (
+                    <span key={i} className="inline-block rounded-full border border-brand-200 bg-white px-2.5 py-0.5 text-xs text-brand-700 font-medium">
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* CV Upload */}

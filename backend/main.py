@@ -12,7 +12,8 @@ Architecture:
 
 import json as _json
 import os
-from typing import Any, Dict
+from contextlib import asynccontextmanager
+from typing import Any, Dict, List
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -24,14 +25,27 @@ try:
     from .schemas import InterviewInput
     from .services.fusion_service import build_fusion_object
     from .services.hrflow_service import parse_and_score, parse_cv
+    from .services.jobs_service import get_jobs, load_jobs
     from .services.llm_service import extract_interview_signals, generate_synthesis
 except ImportError:
     from schemas import InterviewInput
     from services.fusion_service import build_fusion_object
     from services.hrflow_service import parse_and_score, parse_cv
+    from services.jobs_service import get_jobs, load_jobs
     from services.llm_service import extract_interview_signals, generate_synthesis, parse_test_sheet
 
-app = FastAPI(title="AI Candidate Synthesis Agent", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Load jobs cache from HrFlow on startup."""
+    try:
+        await load_jobs()
+    except Exception as exc:
+        print(f"[startup] Could not load jobs cache: {exc}")
+    yield  # app runs here
+
+
+app = FastAPI(title="AI Candidate Synthesis Agent", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -274,6 +288,19 @@ async def full_pipeline(
         "assessment": assessment,
         "synthesis_report": report,
     }
+
+
+# ---------------------------------------------------------------------------
+# Jobs list (autocomplete)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/jobs/list")
+async def jobs_list() -> Dict[str, Any]:
+    """
+    Return all cached jobs for frontend autocomplete.
+    Each item: { key, title, skills, summary }
+    """
+    return {"jobs": get_jobs()}
 
 
 # ---------------------------------------------------------------------------

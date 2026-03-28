@@ -101,6 +101,13 @@ export interface PipelineResult {
   synthesis_report: SynthesisReport
 }
 
+export interface JobOption {
+  key: string
+  title: string
+  skills: string[]
+  summary: string
+}
+
 export interface FormValues {
   candidateName: string
   candidateId: string
