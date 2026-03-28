@@ -20,10 +20,16 @@ from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
-from schemas import InterviewInput
-from services.fusion_service import build_fusion_object
-from services.hrflow_service import parse_and_score, parse_cv
-from services.llm_service import extract_interview_signals, generate_synthesis
+try:
+    from .schemas import InterviewInput
+    from .services.fusion_service import build_fusion_object
+    from .services.hrflow_service import parse_and_score, parse_cv
+    from .services.llm_service import extract_interview_signals, generate_synthesis
+except ImportError:
+    from schemas import InterviewInput
+    from services.fusion_service import build_fusion_object
+    from services.hrflow_service import parse_and_score, parse_cv
+    from services.llm_service import extract_interview_signals, generate_synthesis, parse_test_sheet
 
 app = FastAPI(title="AI Candidate Synthesis Agent", version="1.0.0")
 
@@ -132,6 +138,44 @@ async def generate_candidate_synthesis(payload: dict) -> Dict[str, Any]:
         raise HTTPException(status_code=502, detail=f"LLM synthesis failed: {exc}")
 
     return report
+
+
+# ---------------------------------------------------------------------------
+# 14.X — Parse Test Sheet
+# ---------------------------------------------------------------------------
+
+@app.post("/api/test/parse")
+async def parse_test_sheet_endpoint(file: UploadFile = File(...)) -> Dict[str, Any]:
+    """
+    Parse a technical test sheet (PDF or text) and extract structured scores.
+    Returns scores dict (category.skill → 1-5) and detected target_skills list.
+    """
+    import io
+    content = await file.read()
+    filename = (file.filename or "").lower()
+
+    if filename.endswith(".pdf") or file.content_type == "application/pdf":
+        try:
+            from pypdf import PdfReader
+            reader = PdfReader(io.BytesIO(content))
+            text = "\n".join(p.extract_text() or "" for p in reader.pages)
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"Could not read PDF: {exc}")
+    else:
+        try:
+            text = content.decode("utf-8")
+        except UnicodeDecodeError:
+            raise HTTPException(status_code=422, detail="File must be a PDF or UTF-8 text file")
+
+    if not text.strip():
+        raise HTTPException(status_code=422, detail="Could not extract text from file")
+
+    try:
+        result = await parse_test_sheet(text)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"LLM test parsing failed: {exc}")
+
+    return result
 
 
 # ---------------------------------------------------------------------------
