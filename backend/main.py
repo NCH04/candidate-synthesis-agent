@@ -68,6 +68,9 @@ async def parse_cv_endpoint(
 
     return {
         "profile_key": result["profile_key"],
+        "full_name":   result["full_name"],
+        "first_name":  result["first_name"],
+        "last_name":   result["last_name"],
         "skills": result["skills"],
         "experience_count": len(result["experiences"]),
         "education_count": len(result["educations"]),

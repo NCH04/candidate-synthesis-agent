@@ -55,7 +55,17 @@ async def parse_cv(
     body = response.json()
 
     parsing = body.get("data", {}).get("parsing", {})
-    profile_key = body.get("data", {}).get("profile", {}).get("key", "")
+    profile = body.get("data", {}).get("profile", {})
+    profile_key = profile.get("key", "")
+
+    # Candidate name from profile info
+    info = profile.get("info", {})
+    full_name  = info.get("full_name", "")
+    first_name = info.get("first_name", "")
+    last_name  = info.get("last_name", "")
+    # Fallback: build full_name from parts if HrFlow didn't fill it
+    if not full_name and (first_name or last_name):
+        full_name = f"{first_name} {last_name}".strip()
 
     # Flatten skill names
     skills: List[str] = [
@@ -64,6 +74,9 @@ async def parse_cv(
 
     return {
         "profile_key": profile_key,
+        "full_name": full_name,
+        "first_name": first_name,
+        "last_name": last_name,
         "skills": skills,
         "experiences": parsing.get("experiences", []),
         "educations": parsing.get("educations", []),

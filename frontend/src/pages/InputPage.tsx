@@ -33,6 +33,9 @@ export default function InputPage({ onSubmit }: Props) {
     reviewText: '',
   })
   const [cvDragging, setCvDragging] = useState(false)
+  const [cvParsing, setCvParsing] = useState(false)
+  const [cvParsed, setCvParsed] = useState(false)
+  const [cvParseError, setCvParseError] = useState<string | null>(null)
   const [testDragging, setTestDragging] = useState(false)
   const [testParsed, setTestParsed] = useState<ParsedTest | null>(null)
   const [testParsing, setTestParsing] = useState(false)
@@ -74,11 +77,46 @@ export default function InputPage({ onSubmit }: Props) {
     }
   }
 
+  async function handleCvFileAccept(file: File) {
+    set('cvFile', file)
+    setCvParsed(false)
+    setCvParseError(null)
+    setCvParsing(true)
+
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      // source_key optional — backend falls back to env HRFLOW_SOURCE_KEY
+      const res = await fetch('/api/cv/parse', { method: 'POST', body: fd })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }))
+        throw new Error(err.detail || 'CV parse failed')
+      }
+      const data = await res.json()
+      setCvParsed(true)
+      setForm((f) => ({
+        ...f,
+        cvFile: file,
+        // Only auto-fill if the user hasn't typed a name already
+        candidateName: f.candidateName.trim() === '' ? (data.full_name || '') : f.candidateName,
+        // Auto-generate ID from profile_key (short prefix) if not filled
+        candidateId: f.candidateId.trim() === ''
+          ? (data.profile_key ? `cand_${data.profile_key.slice(0, 8)}` : `cand_${Date.now()}`)
+          : f.candidateId,
+      }))
+    } catch (e: any) {
+      setCvParseError(e.message || 'Could not parse CV')
+      setCvParsed(false)
+    } finally {
+      setCvParsing(false)
+    }
+  }
+
   function handleCvDrop(e: DragEvent<HTMLDivElement>) {
     e.preventDefault()
     setCvDragging(false)
     const file = e.dataTransfer.files[0]
-    if (file) set('cvFile', file)
+    if (file) handleCvFileAccept(file)
   }
 
   function handleTestDrop(e: DragEvent<HTMLDivElement>) {
@@ -112,15 +150,39 @@ export default function InputPage({ onSubmit }: Props) {
             <p className="section-title">Candidate</p>
             <div className="space-y-4">
               <div>
-                <label className="label">Full name</label>
-                <input className="input-field" placeholder="John Doe"
-                  value={form.candidateName} onChange={e => set('candidateName', e.target.value)} />
+                <label className="label">
+                  Full name
+                  {cvParsing && (
+                    <span className="ml-2 text-xs text-slate-400 font-normal">parsing CV…</span>
+                  )}
+                  {cvParsed && form.candidateName && (
+                    <span className="ml-2 text-xs text-green-600 font-normal">✓ auto-filled from CV</span>
+                  )}
+                </label>
+                <input
+                  className={`input-field ${cvParsed && form.candidateName ? 'border-green-300 focus:border-green-400' : ''}`}
+                  placeholder="Filled automatically after CV upload"
+                  value={form.candidateName}
+                  onChange={e => set('candidateName', e.target.value)}
+                />
               </div>
               <div>
-                <label className="label">Candidate ID</label>
-                <input className="input-field" placeholder="cand_001 (auto-generated if empty)"
-                  value={form.candidateId} onChange={e => set('candidateId', e.target.value)} />
+                <label className="label">
+                  Candidate ID
+                  {cvParsed && form.candidateId && (
+                    <span className="ml-2 text-xs text-green-600 font-normal">✓ auto-generated</span>
+                  )}
+                </label>
+                <input
+                  className={`input-field font-mono text-xs ${cvParsed && form.candidateId ? 'border-green-300 focus:border-green-400' : ''}`}
+                  placeholder="Auto-generated after CV upload"
+                  value={form.candidateId}
+                  onChange={e => set('candidateId', e.target.value)}
+                />
               </div>
+              {cvParseError && (
+                <p className="text-xs text-amber-600">⚠ Could not auto-fill: {cvParseError}. Fill manually.</p>
+              )}
             </div>
           </div>
 
@@ -146,7 +208,8 @@ export default function InputPage({ onSubmit }: Props) {
               onDragOver={() => setCvDragging(true)}
               onDragLeave={() => setCvDragging(false)}
               onDrop={handleCvDrop}
-              onFileChange={f => set('cvFile', f)}
+              onFileChange={handleCvFileAccept}
+              loading={cvParsing}
             />
           </div>
         </div>
