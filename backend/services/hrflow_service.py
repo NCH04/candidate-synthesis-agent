@@ -60,12 +60,16 @@ async def parse_cv(
 
     # Candidate name from profile info
     info = profile.get("info", {})
-    full_name  = info.get("full_name", "")
+    raw_full  = info.get("full_name", "")
     first_name = info.get("first_name", "")
     last_name  = info.get("last_name", "")
-    # Fallback: build full_name from parts if HrFlow didn't fill it
-    if not full_name and (first_name or last_name):
-        full_name = f"{first_name} {last_name}".strip()
+    # Prefer building from first+last (more reliable than HrFlow full_name which can be shuffled)
+    if first_name and last_name:
+        full_name = f"{first_name} {last_name}"
+    elif first_name or last_name:
+        full_name = (first_name or last_name).strip()
+    else:
+        full_name = raw_full
 
     # Flatten skill names
     skills: List[str] = [
