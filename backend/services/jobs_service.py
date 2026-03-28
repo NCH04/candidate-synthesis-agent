@@ -50,7 +50,10 @@ async def load_jobs() -> None:
             break
 
         body = resp.json()
-        page_jobs = body.get("data", {}).get("jobs", [])
+        # data is a direct array of job objects, meta is at root level
+        page_jobs = body.get("data", [])
+        if not isinstance(page_jobs, list):
+            page_jobs = []
 
         if not page_jobs:
             break
@@ -68,8 +71,8 @@ async def load_jobs() -> None:
                 "summary": job.get("summary", "") or "",
             })
 
-        # Stop if we got everything
-        total = body.get("data", {}).get("meta", {}).get("total", 0)
+        # meta is at root level, not inside data
+        total = body.get("meta", {}).get("total", 0)
         if len(jobs) >= total or total == 0:
             break
         page += 1
