@@ -24,8 +24,6 @@ export default function InputPage({ onSubmit, jobs }: Props) {
     candidateId: '',
     jobTitle: '',
     jobId: '',
-    boardKey: '',
-    sourceKey: '',
     targetSkills: '',
     cvFile: null,
     testFile: null,
@@ -41,7 +39,6 @@ export default function InputPage({ onSubmit, jobs }: Props) {
   const [testParsed, setTestParsed] = useState<ParsedTest | null>(null)
   const [testParsing, setTestParsing] = useState(false)
   const [testParseError, setTestParseError] = useState<string | null>(null)
-  const [showAdvanced, setShowAdvanced] = useState(false)
   const [jobQuery, setJobQuery] = useState('')
   const [jobDropdownOpen, setJobDropdownOpen] = useState(false)
   const [selectedJob, setSelectedJob] = useState<JobOption | null>(null)
@@ -120,7 +117,6 @@ export default function InputPage({ onSubmit, jobs }: Props) {
     try {
       const fd = new FormData()
       fd.append('file', file)
-      // source_key optional — backend falls back to env HRFLOW_SOURCE_KEY
       const res = await fetch('/api/cv/parse', { method: 'POST', body: fd })
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }))
@@ -133,10 +129,7 @@ export default function InputPage({ onSubmit, jobs }: Props) {
         cvFile: file,
         // Only auto-fill if the user hasn't typed a name already
         candidateName: f.candidateName.trim() === '' ? (data.full_name || '') : f.candidateName,
-        // Auto-generate ID from profile_key (short prefix) if not filled
-        candidateId: f.candidateId.trim() === ''
-          ? (data.profile_key ? `cand_${data.profile_key.slice(0, 8)}` : `cand_${Date.now()}`)
-          : f.candidateId,
+        candidateId: f.candidateId.trim() === '' ? `cand_${Date.now()}` : f.candidateId,
       }))
     } catch (e: any) {
       setCvParseError(e.message || 'Could not parse CV')
@@ -379,44 +372,6 @@ export default function InputPage({ onSubmit, jobs }: Props) {
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Advanced / HrFlow config */}
-      <div className="card">
-        <button type="button"
-          className="flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-700 transition-colors w-full"
-          onClick={() => setShowAdvanced(v => !v)}>
-          <svg className={`w-4 h-4 transition-transform ${showAdvanced ? 'rotate-90' : ''}`}
-            fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-          HrFlow configuration
-          <span className="ml-auto text-xs font-normal text-slate-400">
-            Optional — required for live HrFlow scoring
-          </span>
-        </button>
-        {showAdvanced && (
-          <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
-              <label className="label">Source key</label>
-              <input className="input-field" placeholder="src_xxxxxxxx"
-                value={form.sourceKey} onChange={e => set('sourceKey', e.target.value)} />
-              <p className="text-xs text-slate-400 mt-1">Where parsed profiles are stored</p>
-            </div>
-            <div>
-              <label className="label">Board key</label>
-              <input className="input-field" placeholder="board_xxxxxxxx"
-                value={form.boardKey} onChange={e => set('boardKey', e.target.value)} />
-              <p className="text-xs text-slate-400 mt-1">HrFlow board containing the job</p>
-            </div>
-            <div>
-              <label className="label">Job key</label>
-              <input className="input-field" placeholder="job_xxxxxxxx"
-                value={form.jobId} onChange={e => set('jobId', e.target.value)} />
-              <p className="text-xs text-slate-400 mt-1">HrFlow job reference for scoring</p>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Submit */}
