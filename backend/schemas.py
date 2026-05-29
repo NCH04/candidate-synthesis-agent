@@ -1,5 +1,6 @@
-from typing import Dict, List, Literal, Optional
-from pydantic import BaseModel, Field, conint, confloat
+from typing import Any, Dict, List, Literal, Optional
+
+from pydantic import BaseModel, Field, confloat, conint
 
 DecisionType = Literal["Hire", "Consider", "No Hire"]
 ConfidenceLevel = Literal["High", "Medium", "Low"]
@@ -7,6 +8,7 @@ ExperienceFit = Literal["poor", "fair", "good", "strong"]
 MotivationSignal = Literal["low", "medium", "high"]
 PsychologicalSignal = Literal["negative", "mixed", "positive", "positive and engaged"]
 InterviewType = Literal["technical_interview", "hr_interview", "manager_interview", "assessment_review"]
+CitationSource = Literal["cv", "test", "interview"]
 
 
 class CandidateContext(BaseModel):
@@ -15,7 +17,7 @@ class CandidateContext(BaseModel):
 
 
 class JobContext(BaseModel):
-    job_id: str  # HrFlow job_key or job_reference
+    job_id: str
     job_title: str
     target_skills: List[str] = Field(default_factory=list)
 
@@ -32,7 +34,6 @@ class InterviewInput(BaseModel):
 class FullPipelineRequest(BaseModel):
     candidate_context: CandidateContext
     job_context: JobContext
-    hrflow_board_key: str = Field(..., description="HrFlow board key where the job is stored")
     test_results: TestScoresInput
     interview: InterviewInput
 
@@ -41,7 +42,7 @@ class CVProfileMatching(BaseModel):
     score: confloat(ge=0.0, le=100.0)
     matched_skills: List[str] = Field(default_factory=list)
     missing_skills: List[str] = Field(default_factory=list)
-    experience_fit: ExperienceFit
+    experience_fit: str
     summary: str
 
 
@@ -108,16 +109,42 @@ class CandidateAssessmentObject(BaseModel):
     fusion_summary: FusionSummary
 
 
+# ---------------------------------------------------------------------------
+# Synthesis report — every claim carries a citation back to source evidence
+# ---------------------------------------------------------------------------
+
+class Citation(BaseModel):
+    source: CitationSource
+    extract: str
+
+
+class CitedItem(BaseModel):
+    text: str
+    citation: Citation
+
+
+class FairnessFlag(BaseModel):
+    field: str
+    issue: str
+    suggestion: str
+
+
+class FairnessReport(BaseModel):
+    status: Literal["ok", "flagged"]
+    flags: List[FairnessFlag] = Field(default_factory=list)
+
+
 class CandidateSynthesisReport(BaseModel):
     executive_summary: str
     decision: DecisionType
     confidence_level: ConfidenceLevel
     overall_score: confloat(ge=0.0, le=1.0)
-    strengths: List[str]
-    weaknesses: List[str]
-    risks: List[str]
+    strengths: List[CitedItem] = Field(default_factory=list)
+    weaknesses: List[CitedItem] = Field(default_factory=list)
+    risks: List[CitedItem] = Field(default_factory=list)
     technical_assessment: str
     behavioral_assessment: str
     consistency_analysis: str
     justification: str
     domain_fit: str
+    fairness: Optional[FairnessReport] = None

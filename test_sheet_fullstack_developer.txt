@@ -1,7 +1,7 @@
 ====================================================
 TECHNICAL EVALUATION FORM
 Position: Full Stack Developer
-Candidate: Nabil Marc Chartouni
+Candidate: NCH04
 Evaluator: Sophie Martin
 Date: 2026-03-28
 ====================================================
@@ -44,7 +44,7 @@ Date: 2026-03-28
 
 9. Teamwork — collaboration, pair programming
    Score: 5 / 5
-   Notes: Strong team player. Led coordination in group projects at EPITA.
+   Notes: Strong team player. Led coordination in group projects at university.
 
 10. Creativity — initiative and problem-solving approach
     Score: 3 / 5

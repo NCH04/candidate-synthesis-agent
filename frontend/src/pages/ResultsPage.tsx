@@ -1,4 +1,4 @@
-import { PipelineResult, DecisionType, ConfidenceLevel } from '../types'
+import { PipelineResult, DecisionType, CitedItem, FairnessReport } from '../types'
 
 interface Props {
   result: PipelineResult
@@ -59,22 +59,48 @@ function ScoreCircle({ value, max = 1, label, size = 'md' }: {
   )
 }
 
-function TagList({ items, variant }: { items: string[]; variant: 'green' | 'red' | 'amber' | 'blue' }) {
+const SOURCE_LABEL: Record<'cv' | 'test' | 'interview', string> = {
+  cv: 'CV',
+  test: 'Test',
+  interview: 'Interview',
+}
+
+function CitedList({ items, variant }: { items: CitedItem[]; variant: 'green' | 'red' | 'amber' | 'blue' }) {
   const styles = {
     green: 'bg-green-50 text-green-700 border-green-200',
     red:   'bg-red-50 text-red-700 border-red-200',
     amber: 'bg-amber-50 text-amber-700 border-amber-200',
     blue:  'bg-blue-50 text-blue-700 border-blue-200',
   }
+  const badgeStyles = {
+    green: 'bg-white text-green-600 border-green-300',
+    red:   'bg-white text-red-600 border-red-300',
+    amber: 'bg-white text-amber-700 border-amber-300',
+    blue:  'bg-white text-blue-700 border-blue-300',
+  }
   if (!items?.length) return <p className="text-xs text-slate-400 italic">None identified</p>
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <ul className="space-y-2">
       {items.map((item, i) => (
-        <span key={i} className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-medium ${styles[variant]}`}>
-          {item}
-        </span>
+        <li
+          key={i}
+          className={`rounded-lg border px-3 py-2 text-xs ${styles[variant]}`}
+          title={item.citation?.extract ? `Source: ${item.citation.extract}` : undefined}
+        >
+          <div className="flex items-start gap-2">
+            <span className="font-medium leading-snug flex-1">{item.text}</span>
+            {item.citation?.source && (
+              <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${badgeStyles[variant]}`}>
+                {SOURCE_LABEL[item.citation.source]}
+              </span>
+            )}
+          </div>
+          {item.citation?.extract && (
+            <p className="mt-1 text-[11px] italic text-slate-500 line-clamp-2">"{item.citation.extract}"</p>
+          )}
+        </li>
       ))}
-    </div>
+    </ul>
   )
 }
 
@@ -88,7 +114,7 @@ function SkillChip({ label, matched }: { label: string; matched: boolean }) {
   )
 }
 
-function nextSteps(decision: DecisionType, weaknesses: string[]): { icon: string; text: string }[] {
+function nextSteps(decision: DecisionType, weaknesses: CitedItem[]): { icon: string; text: string }[] {
   if (decision === 'Hire') {
     return [
       { icon: '📞', text: 'Schedule offer call with HR' },
@@ -97,8 +123,9 @@ function nextSteps(decision: DecisionType, weaknesses: string[]): { icon: string
     ]
   }
   if (decision === 'Consider') {
-    const deepDive = weaknesses[0]
-      ? `Schedule 2nd technical interview focused on: ${weaknesses[0]}`
+    const topWeakness = weaknesses[0]?.text
+    const deepDive = topWeakness
+      ? `Schedule 2nd technical interview focused on: ${topWeakness}`
       : 'Schedule 2nd round technical interview'
     return [
       { icon: '🔍', text: deepDive },
@@ -113,6 +140,35 @@ function nextSteps(decision: DecisionType, weaknesses: string[]): { icon: string
   ]
 }
 
+function FairnessBlock({ fairness }: { fairness: FairnessReport }) {
+  if (fairness.status === 'ok') {
+    return (
+      <div className="card border-l-4 border-l-green-400">
+        <p className="section-title text-green-600 mb-1">Fairness review</p>
+        <p className="text-sm text-slate-600">No bias or non-job-relevant content detected.</p>
+      </div>
+    )
+  }
+  return (
+    <div className="card border-l-4 border-l-amber-400 bg-amber-50/40">
+      <p className="section-title text-amber-700 mb-2">
+        Fairness review
+        <span className="ml-2 font-normal normal-case text-xs text-amber-600">
+          {fairness.flags.length} potential issue{fairness.flags.length > 1 ? 's' : ''} flagged
+        </span>
+      </p>
+      <ul className="space-y-2">
+        {fairness.flags.map((flag, i) => (
+          <li key={i} className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs text-slate-700">
+            <p><span className="font-semibold text-amber-700">{flag.field}</span> — {flag.issue}</p>
+            <p className="text-slate-500 italic mt-1">Suggestion: {flag.suggestion}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 /* ─── main component ──────────────────────────────────────────────────────── */
 
 export default function ResultsPage({ result, onReset }: Props) {
@@ -121,7 +177,6 @@ export default function ResultsPage({ result, onReset }: Props) {
   const candidate = a.candidate_context.candidate_name || 'Candidate'
   const jobTitle  = a.job_context.job_title || 'Position'
   const today     = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-  const overallPct = Math.round(r.overall_score * 100)
   const steps = nextSteps(r.decision, r.weaknesses)
 
   return (
@@ -183,19 +238,19 @@ export default function ResultsPage({ result, onReset }: Props) {
         </div>
       </div>
 
-      {/* ── 3. STRENGTHS / WEAKNESSES / RISKS ───────────────────────────── */}
+      {/* ── 3. STRENGTHS / WEAKNESSES / RISKS (with citations) ─────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="card">
           <p className="section-title text-green-600 mb-2">Strengths</p>
-          <TagList items={r.strengths} variant="green" />
+          <CitedList items={r.strengths} variant="green" />
         </div>
         <div className="card">
           <p className="section-title text-red-500 mb-2">Weaknesses</p>
-          <TagList items={r.weaknesses} variant="red" />
+          <CitedList items={r.weaknesses} variant="red" />
         </div>
         <div className="card">
           <p className="section-title text-amber-500 mb-2">Risk factors</p>
-          <TagList items={r.risks} variant="amber" />
+          <CitedList items={r.risks} variant="amber" />
         </div>
       </div>
 
@@ -208,7 +263,7 @@ export default function ResultsPage({ result, onReset }: Props) {
             Skills match
             <span className="ml-2 font-normal normal-case text-slate-400 text-xs">
               {a.cv_profile_matching.matched_skills.length}/{a.cv_profile_matching.matched_skills.length + a.cv_profile_matching.missing_skills.length} matched
-              · HrFlow {a.cv_profile_matching.score.toFixed(0)}/100
+              · Job fit {a.cv_profile_matching.score.toFixed(0)}/100
             </span>
           </p>
           <div className="flex flex-wrap gap-1.5">
@@ -260,6 +315,9 @@ export default function ResultsPage({ result, onReset }: Props) {
         <p className="section-title mb-2">Justification</p>
         <p className="text-sm text-slate-700 leading-relaxed line-clamp-4">{r.justification}</p>
       </div>
+
+      {/* ── 8b. FAIRNESS REVIEW ─────────────────────────────────────────── */}
+      {r.fairness && <FairnessBlock fairness={r.fairness} />}
 
       {/* ── 9. RECOMMENDED NEXT STEPS ───────────────────────────────────── */}
       <div className={`card border-l-4 ${

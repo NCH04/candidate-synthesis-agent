@@ -3,33 +3,27 @@ import { useEffect, useState } from 'react'
 const STEPS = [
   {
     id: 'cv_parsed',
-    label: 'Parsing CV via HrFlow',
-    description: 'Extracting skills, experience, education…',
+    label: 'Parsing CV',
+    description: 'Claude — extracting skills, experience, education…',
     delay: 400,
   },
   {
     id: 'profile_scored',
     label: 'Scoring profile against job',
-    description: 'Running HrFlow GET /v1/profiles/scoring…',
-    delay: 2200,
+    description: 'Semantic skill match + Claude fit evaluation…',
+    delay: 3500,
   },
   {
     id: 'interview_extracted',
     label: 'Extracting interview signals',
-    description: 'Claude Agent 1 — parsing recruiter notes…',
-    delay: 4000,
+    description: 'Claude — parsing recruiter notes…',
+    delay: 6000,
   },
   {
     id: 'fusion_completed',
     label: 'Building fusion object',
     description: 'Weighted combination of CV + test + interview…',
-    delay: 6000,
-  },
-  {
-    id: 'synthesis_generated',
-    label: 'Generating candidate synthesis',
-    description: 'Claude Agent 2 — final evaluation report…',
-    delay: 7500,
+    delay: 8000,
   },
 ]
 
@@ -55,14 +49,16 @@ export default function ProcessingPage() {
               d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
         </div>
-        <h2 className="text-xl font-bold text-slate-800">Running pipeline…</h2>
-        <p className="text-sm text-slate-500 mt-1">This takes 15–30 seconds</p>
+        <h2 className="text-xl font-bold text-slate-800">Building candidate assessment…</h2>
+        <p className="text-sm text-slate-500 mt-1">Once ready, the synthesis will stream live</p>
       </div>
 
       <div className="space-y-3">
         {STEPS.map((step, i) => {
           const isVisible = visible.has(step.id)
-          const isActive = isVisible && i === [...visible].map(id => STEPS.findIndex(s => s.id === id)).sort().at(-1)
+          const indices = [...visible].map(id => STEPS.findIndex(s => s.id === id)).sort()
+          const lastIdx = indices.length ? indices[indices.length - 1] : -1
+          const isActive = isVisible && i === lastIdx
 
           return (
             <div
@@ -72,7 +68,6 @@ export default function ProcessingPage() {
                   ? 'border-slate-200 bg-white shadow-sm opacity-100 translate-y-0'
                   : 'border-transparent bg-transparent opacity-0 translate-y-2 pointer-events-none'}`}
             >
-              {/* Icon */}
               <div className={`mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full
                 ${isActive ? 'bg-brand-100' : 'bg-green-100'}`}>
                 {isActive ? (
@@ -84,7 +79,6 @@ export default function ProcessingPage() {
                 )}
               </div>
 
-              {/* Text */}
               <div>
                 <p className={`text-sm font-semibold ${isActive ? 'text-brand-700' : 'text-slate-700'}`}>
                   {step.label}
@@ -92,7 +86,6 @@ export default function ProcessingPage() {
                 <p className="text-xs text-slate-400">{step.description}</p>
               </div>
 
-              {/* Step number */}
               <span className="ml-auto text-xs text-slate-300 font-mono">{i + 1}/{STEPS.length}</span>
             </div>
           )

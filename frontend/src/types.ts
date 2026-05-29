@@ -25,6 +25,27 @@ export interface CVProfileMatching {
   summary: string
 }
 
+export interface Citation {
+  source: 'cv' | 'test' | 'interview'
+  extract: string
+}
+
+export interface CitedItem {
+  text: string
+  citation: Citation
+}
+
+export interface FairnessFlag {
+  field: string
+  issue: string
+  suggestion: string
+}
+
+export interface FairnessReport {
+  status: 'ok' | 'flagged'
+  flags: FairnessFlag[]
+}
+
 export interface AggregatedTestScores {
   technical_score: number
   soft_skills_score: number
@@ -85,14 +106,15 @@ export interface SynthesisReport {
   decision: DecisionType
   confidence_level: ConfidenceLevel
   overall_score: number
-  strengths: string[]
-  weaknesses: string[]
-  risks: string[]
+  strengths: CitedItem[]
+  weaknesses: CitedItem[]
+  risks: CitedItem[]
   technical_assessment: string
   behavioral_assessment: string
   consistency_analysis: string
   justification: string
   domain_fit: string
+  fairness?: FairnessReport
 }
 
 export interface PipelineResult {
@@ -113,8 +135,6 @@ export interface FormValues {
   candidateId: string
   jobTitle: string
   jobId: string
-  boardKey: string
-  sourceKey: string
   targetSkills: string        // auto-filled from test parse
   cvFile: File | null
   testFile: File | null       // replaces manual JSON — parsed automatically

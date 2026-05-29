@@ -1,56 +1,27 @@
 """
-LLM service — supports 3 providers via LLM_PROVIDER env var:
+LLM service — Anthropic Claude only.
 
-  LLM_PROVIDER=anthropic   → Claude API (default, paid)
-  LLM_PROVIDER=groq        → Groq cloud  (free tier, fast)  ← recommended for hackathon
-  LLM_PROVIDER=ollama      → Ollama local (100% free, needs local model)
-
-Groq and Ollama both expose an OpenAI-compatible API, so we use the openai
-package for them. Anthropic keeps its own client.
+All AI agents in the pipeline (CV parsing, interview signal extraction,
+test sheet parsing, multi-pass synthesis, fairness check) go through
+this single client.
 """
 
 import json
 import os
-from typing import Any, Dict
+from typing import Any, AsyncIterator, Dict
+
+import anthropic
 
 # ---------------------------------------------------------------------------
-# Provider config
+# Client config
 # ---------------------------------------------------------------------------
 
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic").lower()
-
-# --- Anthropic ---
-if LLM_PROVIDER == "anthropic":
-    import anthropic as _anthropic
-    _anthropic_client = _anthropic.AsyncAnthropic(
-        api_key=os.getenv("ANTHROPIC_API_KEY", "")
-    )
-    MODEL = os.getenv("LLM_MODEL", "claude-sonnet-4-6")
-
-# --- Groq (OpenAI-compatible) ---
-elif LLM_PROVIDER == "groq":
-    from openai import AsyncOpenAI
-    _openai_client = AsyncOpenAI(
-        base_url="https://api.groq.com/openai/v1",
-        api_key=os.getenv("GROQ_API_KEY", ""),
-    )
-    MODEL = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
-
-# --- Ollama (OpenAI-compatible local) ---
-elif LLM_PROVIDER == "ollama":
-    from openai import AsyncOpenAI
-    _openai_client = AsyncOpenAI(
-        base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"),
-        api_key="ollama",  # required by the openai client but ignored by ollama
-    )
-    MODEL = os.getenv("LLM_MODEL", "llama3.2")
-
-else:
-    raise ValueError(f"Unknown LLM_PROVIDER: '{LLM_PROVIDER}'. Use: anthropic | groq | ollama")
+_client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""))
+MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 
 
 # ---------------------------------------------------------------------------
-# Internal helper — one interface for all providers
+# Helpers
 # ---------------------------------------------------------------------------
 
 def _strip_fences(raw: str) -> str:
@@ -58,39 +29,61 @@ def _strip_fences(raw: str) -> str:
     raw = raw.strip()
     if raw.startswith("```"):
         parts = raw.split("```")
-        # parts[1] is the content (may start with 'json\n')
         raw = parts[1]
         if raw.startswith("json"):
             raw = raw[4:]
     return raw.strip()
 
 
-async def _chat(system: str, user: str) -> str:
+async def _chat(system: str, user: str, max_tokens: int = 2048) -> str:
     """Send a system + user message and return the raw text response."""
-    if LLM_PROVIDER == "anthropic":
-        msg = await _anthropic_client.messages.create(
-            model=MODEL,
-            max_tokens=2048,
-            system=system,
-            messages=[{"role": "user", "content": user}],
-        )
-        return msg.content[0].text
+    msg = await _client.messages.create(
+        model=MODEL,
+        max_tokens=max_tokens,
+        system=system,
+        messages=[{"role": "user", "content": user}],
+    )
+    return msg.content[0].text
 
-    else:  # groq or ollama — openai-compatible
-        resp = await _openai_client.chat.completions.create(
-            model=MODEL,
-            max_tokens=2048,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            temperature=0.2,
-        )
-        return resp.choices[0].message.content
+
+async def _chat_stream(system: str, user: str, max_tokens: int = 2048) -> AsyncIterator[str]:
+    """Stream a system + user message, yielding text deltas as they arrive."""
+    async with _client.messages.stream(
+        model=MODEL,
+        max_tokens=max_tokens,
+        system=system,
+        messages=[{"role": "user", "content": user}],
+    ) as stream:
+        async for text in stream.text_stream:
+            yield text
 
 
 # ---------------------------------------------------------------------------
-# Agent 1 — Interview Parsing Agent
+# Agent — Candidate Name Extractor
+# ---------------------------------------------------------------------------
+
+NAME_EXTRACT_PROMPT = """\
+You are a CV parser. Extract only the candidate's full name from the CV text below.
+
+Rules:
+- Return ONLY the full name as plain text (e.g. "Jane Smith").
+- Correct capitalisation (First Last format).
+- Do NOT return JSON, labels, or any other text — just the name.
+- If you cannot determine the name, return an empty string.
+"""
+
+
+async def extract_candidate_name(cv_text: str) -> str:
+    """Use Claude to extract the candidate's full name from raw CV text."""
+    snippet = cv_text[:800].strip()
+    if not snippet:
+        return ""
+    raw = await _chat(NAME_EXTRACT_PROMPT, snippet, max_tokens=64)
+    return raw.strip()
+
+
+# ---------------------------------------------------------------------------
+# Agent — Interview Signal Extractor
 # ---------------------------------------------------------------------------
 
 INTERVIEW_SYSTEM_PROMPT = """\
@@ -126,51 +119,13 @@ Expected JSON:
 
 
 async def extract_interview_signals(review_text: str) -> Dict[str, Any]:
-    """Call the configured LLM to extract structured signals from raw interview text."""
+    """Call Claude to extract structured signals from raw interview text."""
     raw = await _chat(INTERVIEW_SYSTEM_PROMPT, review_text)
     return json.loads(_strip_fences(raw))
 
 
 # ---------------------------------------------------------------------------
-# Agent 2 — Final Synthesis Agent
-# ---------------------------------------------------------------------------
-
-SYNTHESIS_SYSTEM_PROMPT = """\
-You are an AI recruitment analyst.
-
-You receive a fully processed candidate assessment object.
-Your task is to generate a standardized candidate synthesis report.
-
-Rules:
-- Use only the provided structured evidence.
-- Do not invent facts.
-- Clearly distinguish strengths, weaknesses, and risks.
-- decision must be one of: Hire, Consider, No Hire
-- confidence_level must be one of: High, Medium, Low
-- overall_score must be a float between 0.0 and 1.0
-- domain_fit: 2-3 sentences describing in which specific job domains/roles this candidate would excel, \
-which skills they can apply immediately, and the recommended role type.
-- Return ONLY valid JSON with the exact keys shown below, nothing else.
-
-Expected JSON:
-{
-  "executive_summary": "...",
-  "decision": "Consider",
-  "confidence_level": "Medium",
-  "overall_score": 0.77,
-  "strengths": ["..."],
-  "weaknesses": ["..."],
-  "risks": ["..."],
-  "technical_assessment": "...",
-  "behavioral_assessment": "...",
-  "consistency_analysis": "...",
-  "justification": "...",
-  "domain_fit": "Strong fit for Backend Development and DevOps roles. Can contribute immediately on CI/CD pipelines and API development. Recommended entry point: Junior Backend Engineer."
-}
-"""
-
-# ---------------------------------------------------------------------------
-# Agent 0 — Test Sheet Parsing Agent
+# Agent — Test Sheet Parser
 # ---------------------------------------------------------------------------
 
 TEST_PARSE_SYSTEM_PROMPT = """\
@@ -199,38 +154,231 @@ Expected JSON:
 
 
 async def parse_test_sheet(file_text: str) -> Dict[str, Any]:
-    """Call the configured LLM to extract structured scores from a test sheet."""
+    """Call Claude to extract structured scores from a test sheet."""
     raw = await _chat(TEST_PARSE_SYSTEM_PROMPT, file_text)
     return json.loads(_strip_fences(raw))
 
 
 # ---------------------------------------------------------------------------
-# Agent 0b — Candidate Name Extractor (bypasses HrFlow name parsing bugs)
+# Agent — CV Structure Extractor
 # ---------------------------------------------------------------------------
 
-NAME_EXTRACT_PROMPT = """\
-You are a CV parser. Extract only the candidate's full name from the CV text below.
+CV_PARSE_SYSTEM_PROMPT = """\
+You are an AI CV parser.
+
+You receive the raw text of a candidate's CV (extracted from a PDF).
+Your task is to extract a structured profile.
 
 Rules:
-- Return ONLY the full name as plain text (e.g. "Nabil Marc Chartouni").
-- Correct capitalisation (First Last format).
-- Do NOT return JSON, labels, or any other text — just the name.
-- If you cannot determine the name, return an empty string.
+- Use only information present in the text.
+- Do not invent or infer beyond what is written.
+- Skills: concrete technical and soft skills, no duplicates, normalized capitalisation.
+- Experiences: most relevant professional/project experiences with title, company/context, duration, summary.
+- Education: degree, institution, year if present.
+- summary: 2-3 sentences neutral description of the candidate profile.
+- Return ONLY valid JSON with the exact keys shown below, nothing else.
+
+Expected JSON:
+{
+  "full_name": "Jane Smith",
+  "skills": ["Python", "FastAPI", "Docker", "Team leadership"],
+  "experiences": [
+    {"title": "Backend Engineer", "context": "ACME Corp", "duration": "2022-2024", "summary": "Built REST APIs and CI/CD pipelines"}
+  ],
+  "education": [
+    {"degree": "MSc Computer Science", "institution": "University X", "year": "2022"}
+  ],
+  "summary": "Junior backend engineer with 2 years of experience in Python and cloud infrastructure."
+}
 """
 
 
-async def extract_candidate_name(cv_text: str) -> str:
-    """Use the LLM to extract the candidate's full name from raw CV text."""
-    # Only send the first 800 chars — the name is always near the top
-    snippet = cv_text[:800].strip()
-    if not snippet:
-        return ""
-    raw = await _chat(NAME_EXTRACT_PROMPT, snippet)
-    return raw.strip()
+async def parse_cv_structure(cv_text: str) -> Dict[str, Any]:
+    """Use Claude to extract a structured profile from raw CV text."""
+    raw = await _chat(CV_PARSE_SYSTEM_PROMPT, cv_text[:8000], max_tokens=2048)
+    return json.loads(_strip_fences(raw))
+
+
+# ---------------------------------------------------------------------------
+# Agent — Profile / Job Fit Scorer
+# ---------------------------------------------------------------------------
+
+SCORE_SYSTEM_PROMPT = """\
+You are an AI recruitment scoring agent.
+
+You receive a structured candidate profile and a job description (title + required skills + summary).
+Your task is to evaluate the candidate-job fit.
+
+Rules:
+- score: integer 0-100 where 0=no fit and 100=perfect fit.
+- experience_fit: one short sentence describing how the candidate's experience matches the role.
+- summary: 1-2 sentences explaining the score.
+- Consider: matched skills coverage, experience relevance, education alignment.
+- Return ONLY valid JSON with the exact keys shown below, nothing else.
+
+Expected JSON:
+{
+  "score": 72,
+  "experience_fit": "Backend Engineer experience aligns well with the Junior Backend Engineer role.",
+  "summary": "Strong technical alignment with the required Python and API skills; experience level matches a junior position."
+}
+"""
+
+
+async def score_profile_job(profile: Dict[str, Any], job: Dict[str, Any]) -> Dict[str, Any]:
+    """Use Claude to score a candidate profile against a job description."""
+    payload = json.dumps({"profile": profile, "job": job}, indent=2, ensure_ascii=False)
+    raw = await _chat(SCORE_SYSTEM_PROMPT, payload, max_tokens=512)
+    return json.loads(_strip_fences(raw))
+
+
+# ---------------------------------------------------------------------------
+# Agent — Final Synthesis (draft pass)
+# ---------------------------------------------------------------------------
+
+SYNTHESIS_SYSTEM_PROMPT = """\
+You are an AI recruitment analyst.
+
+You receive a fully processed candidate assessment object containing:
+- CV/profile matching evidence
+- Test scores (technical, soft, motivation)
+- Interview signals (strengths, weaknesses, risks, motivation, psychological signal)
+
+Your task is to generate a standardized candidate synthesis report.
+
+Rules:
+- Use only the provided structured evidence.
+- Do not invent facts.
+- Every item in strengths/weaknesses/risks MUST include a citation pointing to the source extract.
+- Clearly distinguish strengths, weaknesses, and risks.
+- decision must be one of: Hire, Consider, No Hire
+- confidence_level must be one of: High, Medium, Low
+- overall_score must be a float between 0.0 and 1.0
+- domain_fit: 2-3 sentences describing in which specific job domains/roles this candidate would excel.
+- Return ONLY valid JSON with the exact keys shown below, nothing else.
+
+A citation object has the shape:
+  { "source": "cv" | "test" | "interview", "extract": "<short verbatim or paraphrased snippet from the source>" }
+
+Expected JSON:
+{
+  "executive_summary": "...",
+  "decision": "Consider",
+  "confidence_level": "Medium",
+  "overall_score": 0.77,
+  "strengths": [
+    { "text": "Strong Python proficiency", "citation": { "source": "test", "extract": "technical.python: 4/5" } }
+  ],
+  "weaknesses": [
+    { "text": "Limited system design experience", "citation": { "source": "interview", "extract": "lacks depth in system design" } }
+  ],
+  "risks": [
+    { "text": "Junior level for senior responsibilities", "citation": { "source": "cv", "extract": "2 years of professional experience" } }
+  ],
+  "technical_assessment": "...",
+  "behavioral_assessment": "...",
+  "consistency_analysis": "...",
+  "justification": "...",
+  "domain_fit": "Strong fit for Backend Development and DevOps roles."
+}
+"""
 
 
 async def generate_synthesis(assessment_object: Dict[str, Any]) -> Dict[str, Any]:
-    """Call the configured LLM to generate the final candidate synthesis report."""
+    """Call Claude to generate the draft candidate synthesis report (with citations)."""
     payload = json.dumps(assessment_object, indent=2, ensure_ascii=False)
-    raw = await _chat(SYNTHESIS_SYSTEM_PROMPT, payload)
+    raw = await _chat(SYNTHESIS_SYSTEM_PROMPT, payload, max_tokens=3072)
     return json.loads(_strip_fences(raw))
+
+
+# ---------------------------------------------------------------------------
+# Agent — Synthesis Critic (multi-pass step 2)
+# ---------------------------------------------------------------------------
+
+CRITIC_SYSTEM_PROMPT = """\
+You are an AI synthesis critic.
+
+You receive:
+1. The original structured candidate assessment object (the evidence).
+2. A draft synthesis report produced by another agent.
+
+Your task is to spot problems in the draft and produce a corrected, final version.
+
+Check for:
+- Claims not supported by the provided evidence.
+- Internal inconsistencies (e.g. positive strengths contradicting a "No Hire" decision).
+- Weak or generic justifications.
+- Missing or vague citations.
+- Decision / confidence_level / overall_score not aligned with the evidence.
+
+Rules:
+- Output the SAME JSON shape as the draft, but corrected.
+- Keep items that are well supported.
+- Fix wording, sharpen justifications, fix decision/score if the evidence demands it.
+- Every strength/weakness/risk must still carry a citation.
+- Return ONLY the corrected valid JSON, nothing else.
+"""
+
+
+async def critique_and_refine_synthesis(
+    assessment_object: Dict[str, Any],
+    draft_report: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Run Claude as a critic on the draft synthesis and return the refined version."""
+    payload = json.dumps(
+        {"evidence": assessment_object, "draft_report": draft_report},
+        indent=2,
+        ensure_ascii=False,
+    )
+    raw = await _chat(CRITIC_SYSTEM_PROMPT, payload, max_tokens=3072)
+    return json.loads(_strip_fences(raw))
+
+
+# ---------------------------------------------------------------------------
+# Agent — Fairness / Bias Check
+# ---------------------------------------------------------------------------
+
+FAIRNESS_SYSTEM_PROMPT = """\
+You are an AI fairness reviewer for recruitment outputs.
+
+You receive a final candidate synthesis report.
+Your task is to flag any potentially discriminatory, biased, or non-job-relevant content.
+
+Look for:
+- References to age, gender, ethnicity, nationality, religion, family status, health.
+- Bias by prestige (school/company name used as a proxy instead of demonstrated skill).
+- Personality judgments not grounded in the evidence.
+- Language that could constitute illegal discrimination in EU/US recruitment contexts.
+
+Rules:
+- If everything is fine, return: { "status": "ok", "flags": [] }.
+- Otherwise, for each issue, return an object: { "field": "<field path>", "issue": "<short reason>", "suggestion": "<reformulation>" }.
+- Be precise — do NOT flag legitimate skill-based statements.
+- Return ONLY valid JSON with the exact keys shown below, nothing else.
+
+Expected JSON:
+{
+  "status": "ok" | "flagged",
+  "flags": [
+    { "field": "strengths[0].text", "issue": "References candidate's age", "suggestion": "Replace with skill-based statement" }
+  ]
+}
+"""
+
+
+async def fairness_check(synthesis_report: Dict[str, Any]) -> Dict[str, Any]:
+    """Run Claude as a fairness reviewer on the final synthesis report."""
+    payload = json.dumps(synthesis_report, indent=2, ensure_ascii=False)
+    raw = await _chat(FAIRNESS_SYSTEM_PROMPT, payload, max_tokens=1024)
+    return json.loads(_strip_fences(raw))
+
+
+# ---------------------------------------------------------------------------
+# Streaming variant of the synthesis (for the live results page)
+# ---------------------------------------------------------------------------
+
+async def generate_synthesis_stream(assessment_object: Dict[str, Any]) -> AsyncIterator[str]:
+    """Stream the draft synthesis report token by token (for SSE)."""
+    payload = json.dumps(assessment_object, indent=2, ensure_ascii=False)
+    async for delta in _chat_stream(SYNTHESIS_SYSTEM_PROMPT, payload, max_tokens=3072):
+        yield delta
