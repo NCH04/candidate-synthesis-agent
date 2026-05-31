@@ -1,9 +1,19 @@
 """
 LLM service — Anthropic Claude only.
 
-All AI agents in the pipeline (CV parsing, interview signal extraction,
-test sheet parsing, multi-pass synthesis, fairness check) go through
-this single client.
+Cost-aware model routing:
+  * FAST model  (Haiku)  → cheap, structured extraction (CV parse, interview
+                           signals, test-sheet parsing). ~5x cheaper.
+  * SMART model (Sonnet) → reasoning-heavy work (profile scoring, synthesis,
+                           critic pass, fairness review).
+
+Both are env-overridable (CLAUDE_MODEL_FAST / CLAUDE_MODEL_SMART).
+
+Note on prompt caching: the system prompts here are short (a few hundred
+tokens), well below Anthropic's minimum cacheable prefix (2048 tokens on
+Sonnet, 4096 on Haiku). Ephemeral caching would therefore not trigger, so it
+is intentionally not used — the cost wins come from model routing, dropping
+redundant calls, deterministic pre-filters, and result caching instead.
 """
 
 import json
@@ -13,11 +23,19 @@ from typing import Any, AsyncIterator, Dict
 import anthropic
 
 # ---------------------------------------------------------------------------
-# Client config
+# Client + model tiers
 # ---------------------------------------------------------------------------
 
 _client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""))
-MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
+
+# Cheap model for simple structured extraction
+FAST_MODEL = os.getenv("CLAUDE_MODEL_FAST", "claude-haiku-4-5")
+# Smarter model for reasoning-heavy steps
+SMART_MODEL = os.getenv("CLAUDE_MODEL_SMART", "claude-sonnet-4-6")
+
+# Back-compat: a single override applies to the smart tier
+if os.getenv("CLAUDE_MODEL"):
+    SMART_MODEL = os.environ["CLAUDE_MODEL"]
 
 
 # ---------------------------------------------------------------------------
@@ -35,10 +53,10 @@ def _strip_fences(raw: str) -> str:
     return raw.strip()
 
 
-async def _chat(system: str, user: str, max_tokens: int = 2048) -> str:
+async def _chat(system: str, user: str, *, model: str, max_tokens: int = 2048) -> str:
     """Send a system + user message and return the raw text response."""
     msg = await _client.messages.create(
-        model=MODEL,
+        model=model,
         max_tokens=max_tokens,
         system=system,
         messages=[{"role": "user", "content": user}],
@@ -46,10 +64,12 @@ async def _chat(system: str, user: str, max_tokens: int = 2048) -> str:
     return msg.content[0].text
 
 
-async def _chat_stream(system: str, user: str, max_tokens: int = 2048) -> AsyncIterator[str]:
+async def _chat_stream(
+    system: str, user: str, *, model: str, max_tokens: int = 2048
+) -> AsyncIterator[str]:
     """Stream a system + user message, yielding text deltas as they arrive."""
     async with _client.messages.stream(
-        model=MODEL,
+        model=model,
         max_tokens=max_tokens,
         system=system,
         messages=[{"role": "user", "content": user}],
@@ -59,31 +79,7 @@ async def _chat_stream(system: str, user: str, max_tokens: int = 2048) -> AsyncI
 
 
 # ---------------------------------------------------------------------------
-# Agent — Candidate Name Extractor
-# ---------------------------------------------------------------------------
-
-NAME_EXTRACT_PROMPT = """\
-You are a CV parser. Extract only the candidate's full name from the CV text below.
-
-Rules:
-- Return ONLY the full name as plain text (e.g. "Jane Smith").
-- Correct capitalisation (First Last format).
-- Do NOT return JSON, labels, or any other text — just the name.
-- If you cannot determine the name, return an empty string.
-"""
-
-
-async def extract_candidate_name(cv_text: str) -> str:
-    """Use Claude to extract the candidate's full name from raw CV text."""
-    snippet = cv_text[:800].strip()
-    if not snippet:
-        return ""
-    raw = await _chat(NAME_EXTRACT_PROMPT, snippet, max_tokens=64)
-    return raw.strip()
-
-
-# ---------------------------------------------------------------------------
-# Agent — Interview Signal Extractor
+# Agent — Interview Signal Extractor  (FAST)
 # ---------------------------------------------------------------------------
 
 INTERVIEW_SYSTEM_PROMPT = """\
@@ -119,13 +115,13 @@ Expected JSON:
 
 
 async def extract_interview_signals(review_text: str) -> Dict[str, Any]:
-    """Call Claude to extract structured signals from raw interview text."""
-    raw = await _chat(INTERVIEW_SYSTEM_PROMPT, review_text)
+    """Call Claude (fast tier) to extract structured signals from interview text."""
+    raw = await _chat(INTERVIEW_SYSTEM_PROMPT, review_text, model=FAST_MODEL)
     return json.loads(_strip_fences(raw))
 
 
 # ---------------------------------------------------------------------------
-# Agent — Test Sheet Parser
+# Agent — Test Sheet Parser  (FAST, used only as a fallback to the regex parser)
 # ---------------------------------------------------------------------------
 
 TEST_PARSE_SYSTEM_PROMPT = """\
@@ -154,13 +150,13 @@ Expected JSON:
 
 
 async def parse_test_sheet(file_text: str) -> Dict[str, Any]:
-    """Call Claude to extract structured scores from a test sheet."""
-    raw = await _chat(TEST_PARSE_SYSTEM_PROMPT, file_text)
+    """Call Claude (fast tier) to extract structured scores from a test sheet."""
+    raw = await _chat(TEST_PARSE_SYSTEM_PROMPT, file_text, model=FAST_MODEL)
     return json.loads(_strip_fences(raw))
 
 
 # ---------------------------------------------------------------------------
-# Agent — CV Structure Extractor
+# Agent — CV Structure Extractor  (FAST)
 # ---------------------------------------------------------------------------
 
 CV_PARSE_SYSTEM_PROMPT = """\
@@ -172,9 +168,10 @@ Your task is to extract a structured profile.
 Rules:
 - Use only information present in the text.
 - Do not invent or infer beyond what is written.
-- Skills: concrete technical and soft skills, no duplicates, normalized capitalisation.
-- Experiences: most relevant professional/project experiences with title, company/context, duration, summary.
-- Education: degree, institution, year if present.
+- full_name: the candidate's full name, correctly capitalised (First Last).
+- skills: concrete technical and soft skills, no duplicates, normalized capitalisation.
+- experiences: most relevant professional/project experiences with title, company/context, duration, summary.
+- education: degree, institution, year if present.
 - summary: 2-3 sentences neutral description of the candidate profile.
 - Return ONLY valid JSON with the exact keys shown below, nothing else.
 
@@ -194,13 +191,17 @@ Expected JSON:
 
 
 async def parse_cv_structure(cv_text: str) -> Dict[str, Any]:
-    """Use Claude to extract a structured profile from raw CV text."""
-    raw = await _chat(CV_PARSE_SYSTEM_PROMPT, cv_text[:8000], max_tokens=2048)
+    """Use Claude (fast tier) to extract a structured profile from raw CV text.
+
+    This single call also returns full_name — there is no separate
+    name-extraction request (that would be a redundant round-trip).
+    """
+    raw = await _chat(CV_PARSE_SYSTEM_PROMPT, cv_text[:8000], model=FAST_MODEL)
     return json.loads(_strip_fences(raw))
 
 
 # ---------------------------------------------------------------------------
-# Agent — Profile / Job Fit Scorer
+# Agent — Profile / Job Fit Scorer  (SMART)
 # ---------------------------------------------------------------------------
 
 SCORE_SYSTEM_PROMPT = """\
@@ -226,14 +227,14 @@ Expected JSON:
 
 
 async def score_profile_job(profile: Dict[str, Any], job: Dict[str, Any]) -> Dict[str, Any]:
-    """Use Claude to score a candidate profile against a job description."""
+    """Use Claude (smart tier) to score a candidate profile against a job description."""
     payload = json.dumps({"profile": profile, "job": job}, indent=2, ensure_ascii=False)
-    raw = await _chat(SCORE_SYSTEM_PROMPT, payload, max_tokens=512)
+    raw = await _chat(SCORE_SYSTEM_PROMPT, payload, model=SMART_MODEL, max_tokens=512)
     return json.loads(_strip_fences(raw))
 
 
 # ---------------------------------------------------------------------------
-# Agent — Final Synthesis (draft pass)
+# Agent — Final Synthesis (draft pass)  (SMART)
 # ---------------------------------------------------------------------------
 
 SYNTHESIS_SYSTEM_PROMPT = """\
@@ -285,14 +286,14 @@ Expected JSON:
 
 
 async def generate_synthesis(assessment_object: Dict[str, Any]) -> Dict[str, Any]:
-    """Call Claude to generate the draft candidate synthesis report (with citations)."""
+    """Call Claude (smart tier) to generate the draft synthesis report (with citations)."""
     payload = json.dumps(assessment_object, indent=2, ensure_ascii=False)
-    raw = await _chat(SYNTHESIS_SYSTEM_PROMPT, payload, max_tokens=3072)
+    raw = await _chat(SYNTHESIS_SYSTEM_PROMPT, payload, model=SMART_MODEL, max_tokens=3072)
     return json.loads(_strip_fences(raw))
 
 
 # ---------------------------------------------------------------------------
-# Agent — Synthesis Critic (multi-pass step 2)
+# Agent — Synthesis Critic (multi-pass step 2)  (SMART)
 # ---------------------------------------------------------------------------
 
 CRITIC_SYSTEM_PROMPT = """\
@@ -324,18 +325,19 @@ async def critique_and_refine_synthesis(
     assessment_object: Dict[str, Any],
     draft_report: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Run Claude as a critic on the draft synthesis and return the refined version."""
+    """Run Claude (smart tier) as a critic on the draft synthesis; return the refined version."""
     payload = json.dumps(
         {"evidence": assessment_object, "draft_report": draft_report},
         indent=2,
         ensure_ascii=False,
     )
-    raw = await _chat(CRITIC_SYSTEM_PROMPT, payload, max_tokens=3072)
+    raw = await _chat(CRITIC_SYSTEM_PROMPT, payload, model=SMART_MODEL, max_tokens=3072)
     return json.loads(_strip_fences(raw))
 
 
 # ---------------------------------------------------------------------------
-# Agent — Fairness / Bias Check
+# Agent — Fairness / Bias Check  (SMART, only invoked when the cheap
+# deterministic pre-filter finds a candidate term — see fairness_service.py)
 # ---------------------------------------------------------------------------
 
 FAIRNESS_SYSTEM_PROMPT = """\
@@ -367,18 +369,20 @@ Expected JSON:
 
 
 async def fairness_check(synthesis_report: Dict[str, Any]) -> Dict[str, Any]:
-    """Run Claude as a fairness reviewer on the final synthesis report."""
+    """Run Claude (smart tier) as a fairness reviewer on the final synthesis report."""
     payload = json.dumps(synthesis_report, indent=2, ensure_ascii=False)
-    raw = await _chat(FAIRNESS_SYSTEM_PROMPT, payload, max_tokens=1024)
+    raw = await _chat(FAIRNESS_SYSTEM_PROMPT, payload, model=SMART_MODEL, max_tokens=1024)
     return json.loads(_strip_fences(raw))
 
 
 # ---------------------------------------------------------------------------
-# Streaming variant of the synthesis (for the live results page)
+# Streaming variant of the synthesis (for the live results page)  (SMART)
 # ---------------------------------------------------------------------------
 
 async def generate_synthesis_stream(assessment_object: Dict[str, Any]) -> AsyncIterator[str]:
     """Stream the draft synthesis report token by token (for SSE)."""
     payload = json.dumps(assessment_object, indent=2, ensure_ascii=False)
-    async for delta in _chat_stream(SYNTHESIS_SYSTEM_PROMPT, payload, max_tokens=3072):
+    async for delta in _chat_stream(
+        SYNTHESIS_SYSTEM_PROMPT, payload, model=SMART_MODEL, max_tokens=3072
+    ):
         yield delta
