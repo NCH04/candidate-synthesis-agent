@@ -1,0 +1,97 @@
+{
+  "cv_parse": {
+    "full_name": "Jordan Avery",
+    "skills": ["Python", "FastAPI", "PostgreSQL", "Docker", "REST APIs", "Git", "Communication", "Teamwork"],
+    "experience_count": 2,
+    "education_count": 1,
+    "summary": "Junior backend engineer with 2 years of experience building Python APIs and containerized services."
+  },
+  "test_parse": {
+    "scores": {
+      "technical.python": 4,
+      "technical.sql": 3,
+      "technical.system_design": 2,
+      "soft.communication": 4,
+      "soft.teamwork": 5,
+      "motivation.role_interest": 5
+    },
+    "target_skills": ["Python", "SQL", "System design", "Communication", "Teamwork", "Role interest"]
+  },
+  "assessment": {
+    "candidate_context": { "candidate_id": "demo_cand_001", "candidate_name": "Jordan Avery" },
+    "job_context": {
+      "job_id": "391db21d-fc9f-4db5-b281-ff8005548735",
+      "job_title": "Senior Python Backend Engineer",
+      "target_skills": ["docker", "fastapi", "postgresql", "rest apis", "python", "microservices", "communication", "teamwork", "problem solving", "autonomy"]
+    },
+    "cv_profile_matching": {
+      "score": 68.0,
+      "matched_skills": ["python", "fastapi", "postgresql", "docker", "rest apis", "communication", "teamwork"],
+      "missing_skills": ["microservices", "problem solving", "autonomy"],
+      "experience_fit": "Backend experience aligns with the role but is junior for a senior position.",
+      "summary": "Strong coverage of the core Python/API stack; limited exposure to microservices and senior-level autonomy."
+    },
+    "test_assessment": {
+      "raw_scores": {
+        "technical.python": 4,
+        "technical.sql": 3,
+        "technical.system_design": 2,
+        "soft.communication": 4,
+        "soft.teamwork": 5,
+        "motivation.role_interest": 5
+      },
+      "aggregated_scores": { "technical_score": 3.0, "soft_skills_score": 4.5, "motivation_score": 5.0 },
+      "summary": "Test results show adequate technical results, good soft skills, high motivation."
+    },
+    "interview_assessment": {
+      "interview_type": "technical_interview",
+      "review_text": "Strong in backend and APIs, but lacks depth in system design. Good communication and very motivated.",
+      "extracted_signals": {
+        "strengths": ["backend development", "API design", "communication"],
+        "weaknesses": ["system design depth"],
+        "risks": ["junior for senior scope"],
+        "motivation_signal": "high",
+        "psychological_signal": "positive and engaged",
+        "summary": "Solid backend engineer, highly motivated, needs growth in system design."
+      },
+      "summary": "Solid backend engineer, highly motivated, needs growth in system design."
+    },
+    "fusion_summary": {
+      "weights": { "cv_profile_matching": 0.35, "test_assessment": 0.4, "interview_assessment": 0.25 },
+      "dimension_scores": { "technical_fit": 0.62, "motivation_fit": 0.88, "communication_fit": 0.84, "overall_score": 0.71 },
+      "consistency_flags": [
+        "Strengths confirmed across CV and interview: communication",
+        "High motivation confirmed across test results and interview."
+      ],
+      "final_evidence": {
+        "top_strengths": ["python", "fastapi", "communication", "API design"],
+        "top_weaknesses": ["microservices", "system design depth"],
+        "top_risks": ["junior for senior scope"]
+      }
+    }
+  },
+  "synthesis_report": {
+    "executive_summary": "Jordan Avery is a highly motivated junior backend engineer with a strong Python/API foundation. They cover most of the required stack but lack senior-level system design depth and microservices exposure, making them a strong Consider for a mid-level role with growth runway.",
+    "decision": "Consider",
+    "confidence_level": "Medium",
+    "overall_score": 0.71,
+    "strengths": [
+      { "text": "Strong Python and FastAPI proficiency", "citation": { "source": "test", "extract": "technical.python: 4/5" } },
+      { "text": "Excellent teamwork and communication", "citation": { "source": "test", "extract": "soft.teamwork: 5/5, soft.communication: 4/5" } },
+      { "text": "Very high motivation for the role", "citation": { "source": "interview", "extract": "very motivated" } }
+    ],
+    "weaknesses": [
+      { "text": "Limited system design depth", "citation": { "source": "interview", "extract": "lacks depth in system design" } },
+      { "text": "No demonstrated microservices experience", "citation": { "source": "cv", "extract": "missing skill: microservices" } }
+    ],
+    "risks": [
+      { "text": "Junior experience level for a senior-scoped role", "citation": { "source": "cv", "extract": "2 years of professional experience" } }
+    ],
+    "technical_assessment": "Solid on Python, FastAPI, PostgreSQL and Docker. System design scored lowest (2/5), which is the main gap for a senior backend role.",
+    "behavioral_assessment": "Strong collaborator with high motivation and positive, engaged interview signals.",
+    "consistency_analysis": "Sources agree: communication is a confirmed strength and motivation is consistently high across test and interview.",
+    "justification": "The candidate clears the bar on core backend skills and culture signals but falls short of the senior system-design expectations. A mid-level offer or a senior role with a mentoring plan is the balanced recommendation.",
+    "domain_fit": "Strong fit for Backend Development and API-focused roles. Can contribute immediately on Python/FastAPI services. Recommended entry point: mid-level Backend Engineer with a path to senior.",
+    "fairness": { "status": "ok", "flags": [] }
+  }
+}

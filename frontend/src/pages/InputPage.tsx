@@ -16,9 +16,11 @@ interface ParsedTest {
 interface Props {
   onSubmit: (form: FormValues) => void
   jobs: JobOption[]
+  demoMode?: boolean
+  onRunDemo?: () => void
 }
 
-export default function InputPage({ onSubmit, jobs }: Props) {
+export default function InputPage({ onSubmit, jobs, demoMode, onRunDemo }: Props) {
   const [form, setForm] = useState<FormValues>({
     candidateName: '',
     candidateId: '',
@@ -167,6 +169,20 @@ export default function InputPage({ onSubmit, jobs }: Props) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {demoMode && onRunDemo && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-amber-800">Try it instantly — no upload needed</p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              This deployment runs in demo mode. Click below to see a full evaluation on a sample candidate.
+            </p>
+          </div>
+          <button type="button" onClick={onRunDemo} className="btn-primary whitespace-nowrap">
+            ▶ Run sample evaluation
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
         {/* Left column */}

@@ -6,6 +6,7 @@ import StreamingPage from './pages/StreamingPage'
 import ResultsPage from './pages/ResultsPage'
 import { preparePipeline } from './api/pipeline'
 import { fetchJobs } from './api/jobs'
+import { fetchConfig } from './api/config'
 
 type View = 'input' | 'processing' | 'streaming' | 'results'
 
@@ -15,9 +16,11 @@ export default function App() {
   const [result, setResult] = useState<PipelineResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [jobs, setJobs] = useState<JobOption[]>([])
+  const [demoMode, setDemoMode] = useState(false)
 
   useEffect(() => {
     fetchJobs().then(setJobs)
+    fetchConfig().then(c => setDemoMode(c.demo_mode))
   }, [])
 
   async function handleSubmit(form: FormValues) {
@@ -33,6 +36,24 @@ export default function App() {
       setError(err instanceof Error ? err.message : 'An error occurred')
       setView('input')
     }
+  }
+
+  // Demo mode: the backend returns canned results, so the inputs are dummies
+  // that only need to satisfy the request shape.
+  function handleRunDemo() {
+    const sampleJob = jobs.find(j => j.title === 'Senior Python Backend Engineer') ?? jobs[0]
+    handleSubmit({
+      candidateName: '',
+      candidateId: '',
+      jobTitle: sampleJob?.title ?? 'Senior Python Backend Engineer',
+      jobId: sampleJob?.key ?? '',
+      targetSkills: '',
+      cvFile: new File(['demo'], 'demo.txt', { type: 'text/plain' }),
+      testFile: null,
+      testResultsJson: '{"technical.python": 4}',
+      interviewType: 'technical_interview',
+      reviewText: 'Demo candidate — sample evaluation.',
+    })
   }
 
   const handleStreamComplete = useCallback(
@@ -118,6 +139,17 @@ export default function App() {
         </div>
       </div>
 
+      {demoMode && (
+        <div className="bg-amber-50 border-b border-amber-200">
+          <div className="max-w-5xl mx-auto px-6 py-2.5 flex items-center gap-3 text-xs text-amber-800">
+            <span className="rounded-full bg-amber-400 text-white font-bold px-2 py-0.5 text-[10px] tracking-wide">DEMO</span>
+            <span>
+              Demo mode — results are pre-computed sample data. No AI calls are made, nothing you upload is processed.
+            </span>
+          </div>
+        </div>
+      )}
+
       <main className="max-w-5xl mx-auto px-6 py-8">
         {error && (
           <div className="mb-6 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 flex gap-2 items-start">
@@ -129,7 +161,14 @@ export default function App() {
           </div>
         )}
 
-        {view === 'input' && <InputPage onSubmit={handleSubmit} jobs={jobs} />}
+        {view === 'input' && (
+          <InputPage
+            onSubmit={handleSubmit}
+            jobs={jobs}
+            demoMode={demoMode}
+            onRunDemo={handleRunDemo}
+          />
+        )}
         {view === 'processing' && <ProcessingPage />}
         {view === 'streaming' && assessment && (
           <StreamingPage
