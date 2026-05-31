@@ -3,30 +3,58 @@ CV service — PDF text extraction + Claude-based profile parsing and scoring.
 
 Pipeline:
   1. extract_text_from_pdf(file_bytes)        → raw text
-  2. llm_service.parse_cv_structure(text)     → {skills, experiences, education, ...}
-  3. llm_service.extract_candidate_name(text) → reliable full name
-  4. skill_match_service.match_skills(...)    → semantic matched / missing
-  5. llm_service.score_profile_job(...)       → fit score + summary
+  2. llm_service.parse_cv_structure(text)     → {full_name, skills, experiences, education, ...}
+  3. skill_match_service.match_skills(...)    → semantic matched / missing
+  4. llm_service.score_profile_job(...)       → fit score + summary
 
-This replaces the previous external CV parsing dependency.
-Everything runs against Claude + a local embedding model — no third-party
-recruitment API required.
+Cost controls:
+  * The structured parse already returns full_name, so there is no separate
+    name-extraction call (that round-trip was redundant).
+  * Parsed profiles are cached by a hash of the file bytes — re-uploading the
+    same CV skips the parse entirely.
 """
 
 from __future__ import annotations
 
+import hashlib
 import io
+from collections import OrderedDict
 from typing import Any, Dict, List, Optional
 
 import pdfplumber
 
-from .llm_service import (
-    extract_candidate_name,
-    parse_cv_structure,
-    score_profile_job,
-)
+from .llm_service import parse_cv_structure, score_profile_job
 from .skill_match_service import match_skills
 
+# ---------------------------------------------------------------------------
+# Tiny in-memory LRU cache (process-local). Keyed by sha256 of the file bytes.
+# ---------------------------------------------------------------------------
+
+_CACHE_MAX = 64
+_profile_cache: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+
+
+def _cache_get(key: str) -> Optional[Dict[str, Any]]:
+    if key in _profile_cache:
+        _profile_cache.move_to_end(key)
+        return _profile_cache[key]
+    return None
+
+
+def _cache_put(key: str, value: Dict[str, Any]) -> None:
+    _profile_cache[key] = value
+    _profile_cache.move_to_end(key)
+    while len(_profile_cache) > _CACHE_MAX:
+        _profile_cache.popitem(last=False)
+
+
+def _hash_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# Extraction
+# ---------------------------------------------------------------------------
 
 def extract_text_from_pdf(file_bytes: bytes) -> str:
     """Extract plain text from a PDF (uses pdfplumber)."""
@@ -43,9 +71,8 @@ async def parse_cv(file_bytes: bytes, filename: str, content_type: str) -> Dict[
     """
     Parse a CV file end-to-end:
       - extract raw text (PDF or text/plain),
-      - have Claude extract a structured profile,
-      - have Claude re-extract the candidate name (more reliable than parsers),
-      - return a dict ready to feed into scoring + final synthesis.
+      - have Claude extract a structured profile (incl. full_name),
+      - cache the result by file hash.
 
     Returned dict shape:
       {
@@ -57,27 +84,24 @@ async def parse_cv(file_bytes: bytes, filename: str, content_type: str) -> Dict[
         "summary": "..."
       }
     """
+    cache_key = _hash_bytes(file_bytes)
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     name_lower = filename.lower()
     if name_lower.endswith(".pdf") or content_type == "application/pdf":
         raw_text = extract_text_from_pdf(file_bytes)
     else:
-        # Plain text or markdown CV
         raw_text = file_bytes.decode("utf-8", errors="replace")
 
     if not raw_text.strip():
         raise ValueError("Could not extract any text from the uploaded CV.")
 
     profile = await parse_cv_structure(raw_text)
-
-    # Prefer LLM-extracted full name (Claude is good at this and ignores headers/footers)
-    try:
-        extracted_name = (await extract_candidate_name(raw_text)).strip()
-        if extracted_name:
-            profile["full_name"] = extracted_name
-    except Exception:
-        pass
-
     profile["raw_text"] = raw_text
+
+    _cache_put(cache_key, profile)
     return profile
 
 
@@ -89,13 +113,7 @@ async def score_profile_against_job(
     Combine semantic skill matching (local embeddings) with Claude-based scoring.
 
     Returns:
-      {
-        "score": 0-100,
-        "matched_skills": [...],
-        "missing_skills": [...],
-        "experience_fit": "...",
-        "summary": "..."
-      }
+      { "score", "matched_skills", "missing_skills", "experience_fit", "summary" }
     """
     candidate_skills: List[str] = profile.get("skills") or []
     target_skills: List[str] = job.get("skills") or job.get("target_skills") or []
@@ -103,7 +121,7 @@ async def score_profile_against_job(
     # 1) Semantic skill match (no API call — local model)
     skill_match = match_skills(candidate_skills, target_skills)
 
-    # 2) Claude-based qualitative score (sees full profile + job description)
+    # 2) Claude-based qualitative score (smart tier)
     claude_eval = await score_profile_job(
         profile={
             "skills": candidate_skills,
@@ -133,12 +151,7 @@ async def parse_and_score(
     content_type: str,
     job: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """
-    End-to-end: parse CV + (optionally) score against a job.
-
-    Returned shape matches what the orchestrator (main.py) expects for the
-    cv_profile_matching block of the assessment object.
-    """
+    """End-to-end: parse CV + (optionally) score against a job."""
     profile = await parse_cv(file_bytes, filename, content_type)
 
     if job:
