@@ -50,6 +50,14 @@ The pipeline runs **eight agents** in sequence:
 The final report is **streamed live** to the UI via Server-Sent Events: the
 recruiter watches the synthesis being produced in real time.
 
+The pipeline is **cost-aware** by design: simple extraction runs on a cheap
+model (Haiku) while only the reasoning steps use a stronger one (Sonnet),
+test sheets in a standard layout are parsed for free with a regex, a
+deterministic word-scan skips the fairness LLM call when nothing sensitive is
+present, parsed CVs are cached by content hash, and an optional economy mode
+drops the two priciest passes. A **demo mode** serves pre-computed sample
+results with **zero API calls** — ideal for a public deployment.
+
 ### What the recruiter gets
 
 - A clear **Hire / Consider / No Hire** decision with confidence level
@@ -212,7 +220,29 @@ All endpoints are mounted under `/api`.
 - **Adding jobs** — edit `backend/jobs.json`. Each entry is `{ key, title, skills, summary }`. The UI picks them up at startup.
 - **Tuning fusion weights** — `WEIGHTS` in `backend/services/fusion_service.py` (defaults: CV 35% / Test 40% / Interview 25%).
 - **Semantic match threshold** — `_DEFAULT_THRESHOLD` in `backend/services/skill_match_service.py` (default cosine 0.55).
-- **Switching Claude model** — set `CLAUDE_MODEL` in `.env`.
+- **Model routing** — `CLAUDE_MODEL_FAST` (default `claude-haiku-4-5`) and `CLAUDE_MODEL_SMART` (default `claude-sonnet-4-6`) in `.env`.
+
+### 3.7 Cost controls
+
+The system is designed to keep the Anthropic bill low:
+
+| Lever | What it does | Env / location |
+|-------|--------------|----------------|
+| **Model routing** | Cheap Haiku for extraction, Sonnet only for reasoning | `CLAUDE_MODEL_FAST` / `CLAUDE_MODEL_SMART` |
+| **Regex test parser** | Standard-layout test sheets parsed for free; LLM only as fallback | `backend/services/test_parser_service.py` |
+| **Fairness pre-filter** | Local word-scan; LLM fairness call only when a sensitive term appears | `backend/services/fairness_service.py` |
+| **Result cache** | Re-uploading the same CV skips the parse (hashed by content) | `backend/services/cv_service.py` |
+| **Economy mode** | Skip the critic + fairness passes (2 fewer Claude calls) | `ECONOMY_MODE=true` |
+| **Demo mode** | Serve pre-computed sample results — **zero API calls** | `DEMO_MODE=true` |
+
+### 3.8 Demo mode
+
+Set `DEMO_MODE=true` (no API key required). Every endpoint returns canned
+sample data from `backend/demo_data/sample.json`, the synthesis is fake-streamed
+for the live effect, and the UI shows a demo banner plus a one-click
+**“Run sample evaluation”** button. This lets you expose a public demo without
+anyone spending your API budget. Customise the sample by editing
+`backend/demo_data/sample.json`.
 
 ---
 
@@ -236,7 +266,11 @@ no cold-start that matters for a portfolio demo).
    The YAML frontmatter at the top of this README tells Spaces to build with
    Docker on port 7860 — no extra config file required.
 3. **Set the secret** in `Settings → Variables and secrets`:
-   - `ANTHROPIC_API_KEY` = your Anthropic key (mark as **Secret**, not Variable)
+   - For a **live** demo: `ANTHROPIC_API_KEY` = your Anthropic key (mark as **Secret**).
+   - For a **public** demo where strangers must not spend your budget: set the
+     variable `DEMO_MODE` = `true` instead (no API key needed). Every visitor
+     gets the pre-computed sample evaluation with zero API calls. **This is the
+     recommended setting for a public portfolio link.**
 4. The Space builds automatically. First build takes ~5 minutes. After that:
    - Public URL: `https://huggingface.co/spaces/<your-user>/<space-name>`
    - Embedded iframe URL for portfolios: `https://<your-user>-<space-name>.hf.space`
@@ -276,6 +310,8 @@ This project is being actively extended. Items already shipped vs. planned:
 - [x] Live streaming of the synthesis (SSE)
 - [x] Docker + one-command setup (`docker compose up`)
 - [x] Public demo on Hugging Face Spaces
+- [x] Cost controls (model routing, regex/heuristic pre-filters, result cache, economy mode)
+- [x] Demo mode (zero-API-call sample for public deployments)
 - [ ] Multi-candidate comparison view
 - [ ] SQLite persistence + evaluation history
 - [ ] PDF export of the final report
