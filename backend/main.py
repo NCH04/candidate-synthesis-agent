@@ -31,10 +31,15 @@ load_dotenv()
 
 try:
     from .schemas import InterviewInput
+    from .services import demo_service
     from .services.cv_service import extract_text_from_pdf, parse_and_score, parse_cv
+    from .services.fairness_service import clean_fairness_result, needs_llm_fairness_review
     from .services.fusion_service import build_fusion_object
     from .services.jobs_service import get_job_by_key, get_jobs, load_jobs_from_file
+    from .services.test_parser_service import parse_test_sheet_regex
     from .services.llm_service import (
+        FAST_MODEL,
+        SMART_MODEL,
         critique_and_refine_synthesis,
         extract_interview_signals,
         fairness_check,
@@ -44,10 +49,15 @@ try:
     )
 except ImportError:
     from schemas import InterviewInput  # type: ignore
+    from services import demo_service  # type: ignore
     from services.cv_service import extract_text_from_pdf, parse_and_score, parse_cv  # type: ignore
+    from services.fairness_service import clean_fairness_result, needs_llm_fairness_review  # type: ignore
     from services.fusion_service import build_fusion_object  # type: ignore
     from services.jobs_service import get_job_by_key, get_jobs, load_jobs_from_file  # type: ignore
+    from services.test_parser_service import parse_test_sheet_regex  # type: ignore
     from services.llm_service import (  # type: ignore
+        FAST_MODEL,
+        SMART_MODEL,
         critique_and_refine_synthesis,
         extract_interview_signals,
         fairness_check,
@@ -55,6 +65,11 @@ except ImportError:
         generate_synthesis_stream,
         parse_test_sheet,
     )
+
+
+def _economy_mode() -> bool:
+    """When true, skip the critic + fairness passes (the two priciest steps)."""
+    return os.getenv("ECONOMY_MODE", "false").strip().lower() in {"1", "true", "yes", "on"}
 
 
 @asynccontextmanager
@@ -76,12 +91,28 @@ app.add_middleware(
 
 
 # ---------------------------------------------------------------------------
+# Runtime config (so the frontend can show a demo banner, etc.)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/config")
+async def get_config() -> Dict[str, Any]:
+    return {
+        "demo_mode": demo_service.is_demo_mode(),
+        "economy_mode": _economy_mode(),
+        "models": {"fast": FAST_MODEL, "smart": SMART_MODEL},
+    }
+
+
+# ---------------------------------------------------------------------------
 # CV — parse only (used at upload time to auto-fill candidate name/skills)
 # ---------------------------------------------------------------------------
 
 @app.post("/api/cv/parse")
 async def parse_cv_endpoint(file: UploadFile = File(...)) -> Dict[str, Any]:
     """Parse a CV file via Claude and return a structured profile."""
+    if demo_service.is_demo_mode():
+        return demo_service.demo_cv_parse()
+
     content = await file.read()
     try:
         profile = await parse_cv(
@@ -138,15 +169,30 @@ async def build_candidate_assessment(payload: dict) -> Dict[str, Any]:
 # Synthesis — draft → critic → fairness
 # ---------------------------------------------------------------------------
 
-async def _run_multipass_synthesis(assessment: Dict[str, Any]) -> Dict[str, Any]:
-    """Draft → Critic → Fairness. Returns final report with embedded fairness section."""
-    draft = await generate_synthesis(assessment)
-    refined = await critique_and_refine_synthesis(assessment, draft)
+async def _resolve_fairness(report: Dict[str, Any]) -> Dict[str, Any]:
+    """Cheap deterministic pre-filter; only call the LLM reviewer if needed."""
+    if not needs_llm_fairness_review(report):
+        return clean_fairness_result()
     try:
-        fairness = await fairness_check(refined)
+        return await fairness_check(report)
     except Exception:
-        fairness = {"status": "ok", "flags": []}
-    refined["fairness"] = fairness
+        return clean_fairness_result()
+
+
+async def _run_multipass_synthesis(assessment: Dict[str, Any]) -> Dict[str, Any]:
+    """Draft → (Critic → Fairness). Returns final report with embedded fairness section.
+
+    In ECONOMY_MODE the critic and fairness passes are skipped to save two of
+    the priciest Claude calls; the draft is returned directly.
+    """
+    draft = await generate_synthesis(assessment)
+
+    if _economy_mode():
+        draft["fairness"] = clean_fairness_result()
+        return draft
+
+    refined = await critique_and_refine_synthesis(assessment, draft)
+    refined["fairness"] = await _resolve_fairness(refined)
     return refined
 
 
@@ -169,6 +215,11 @@ async def stream_candidate_synthesis(payload: dict) -> StreamingResponse:
     delivered as a final 'event: final' message containing the refined JSON.
     """
 
+    async def demo_event_source():
+        async for delta in demo_service.fake_synthesis_stream():
+            yield f"event: delta\ndata: {_json.dumps({'text': delta})}\n\n"
+        yield f"event: final\ndata: {_json.dumps(demo_service.demo_synthesis_report())}\n\n"
+
     async def event_source():
         try:
             buffer_parts = []
@@ -185,18 +236,20 @@ async def stream_candidate_synthesis(payload: dict) -> StreamingResponse:
                 yield f"event: error\ndata: {_json.dumps({'message': 'draft parse failed'})}\n\n"
                 return
 
+            if _economy_mode():
+                draft_json["fairness"] = clean_fairness_result()
+                yield f"event: final\ndata: {_json.dumps(draft_json)}\n\n"
+                return
+
             refined = await critique_and_refine_synthesis(payload, draft_json)
-            try:
-                fairness = await fairness_check(refined)
-            except Exception:
-                fairness = {"status": "ok", "flags": []}
-            refined["fairness"] = fairness
+            refined["fairness"] = await _resolve_fairness(refined)
 
             yield f"event: final\ndata: {_json.dumps(refined)}\n\n"
         except Exception as exc:
             yield f"event: error\ndata: {_json.dumps({'message': str(exc)})}\n\n"
 
-    return StreamingResponse(event_source(), media_type="text/event-stream")
+    source = demo_event_source if demo_service.is_demo_mode() else event_source
+    return StreamingResponse(source(), media_type="text/event-stream")
 
 
 # ---------------------------------------------------------------------------
@@ -205,6 +258,9 @@ async def stream_candidate_synthesis(payload: dict) -> StreamingResponse:
 
 @app.post("/api/test/parse")
 async def parse_test_sheet_endpoint(file: UploadFile = File(...)) -> Dict[str, Any]:
+    if demo_service.is_demo_mode():
+        return demo_service.demo_test_parse()
+
     content = await file.read()
     filename = (file.filename or "").lower()
 
@@ -221,6 +277,12 @@ async def parse_test_sheet_endpoint(file: UploadFile = File(...)) -> Dict[str, A
 
     if not text.strip():
         raise HTTPException(status_code=422, detail="Could not extract text from file")
+
+    # Try the free deterministic parser first; fall back to Claude only if the
+    # layout isn't recognised.
+    regex_result = parse_test_sheet_regex(text)
+    if regex_result is not None:
+        return regex_result
 
     try:
         return await parse_test_sheet(text)
@@ -322,6 +384,9 @@ async def pipeline_prepare(
     The frontend then opens an SSE stream to /api/candidate/synthesis/stream
     with this assessment to receive the synthesis live.
     """
+    if demo_service.is_demo_mode():
+        return {"assessment": demo_service.demo_assessment()}
+
     file_bytes = await file.read()
     assessment = await _build_assessment(
         file_bytes=file_bytes,
@@ -355,6 +420,9 @@ async def full_pipeline(
     Non-streaming end-to-end pipeline (kept for tests and integrations).
     Steps 1-5 then multi-pass synthesis (draft → critic → fairness).
     """
+    if demo_service.is_demo_mode():
+        return demo_service.demo_pipeline_result()
+
     file_bytes = await file.read()
     assessment = await _build_assessment(
         file_bytes=file_bytes,
