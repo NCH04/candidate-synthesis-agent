@@ -1,5 +1,3 @@
-title: AI Candidate Synthesis Agent
-
 # AI Candidate Synthesis Agent
 
 A multi-agent recruitment assistant that turns raw hiring evidence — a CV, a
