@@ -55,6 +55,12 @@ export interface AggregatedTestScores {
 export interface TestAssessment {
   raw_scores: Record<string, number>
   aggregated_scores: AggregatedTestScores
+  /**
+   * Dimensions the test sheet actually scored. A dimension missing here reads
+   * 0.0 in `aggregated_scores` meaning "not evaluated" — it is excluded from
+   * the weighted averages rather than counted as a zero.
+   */
+  scored_dimensions?: ('technical' | 'soft' | 'motivation')[]
   summary: string
 }
 

@@ -12,43 +12,44 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, AsyncIterator, Dict
+from typing import Any
 
 _SAMPLE_PATH = Path(__file__).resolve().parent.parent / "demo_data" / "sample.json"
 
-_sample: Dict[str, Any] | None = None
+_sample: dict[str, Any] | None = None
 
 
 def is_demo_mode() -> bool:
     return os.getenv("DEMO_MODE", "false").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _load() -> Dict[str, Any]:
+def _load() -> dict[str, Any]:
     global _sample
     if _sample is None:
-        with open(_SAMPLE_PATH, "r", encoding="utf-8") as f:
+        with open(_SAMPLE_PATH, encoding="utf-8") as f:
             _sample = json.load(f)
     return _sample
 
 
-def demo_cv_parse() -> Dict[str, Any]:
+def demo_cv_parse() -> dict[str, Any]:
     return dict(_load()["cv_parse"])
 
 
-def demo_test_parse() -> Dict[str, Any]:
+def demo_test_parse() -> dict[str, Any]:
     return dict(_load()["test_parse"])
 
 
-def demo_assessment() -> Dict[str, Any]:
+def demo_assessment() -> dict[str, Any]:
     return dict(_load()["assessment"])
 
 
-def demo_synthesis_report() -> Dict[str, Any]:
+def demo_synthesis_report() -> dict[str, Any]:
     return dict(_load()["synthesis_report"])
 
 
-def demo_pipeline_result() -> Dict[str, Any]:
+def demo_pipeline_result() -> dict[str, Any]:
     data = _load()
     return {
         "pipeline_steps": {

@@ -9,18 +9,44 @@ Cost-aware model routing:
 
 Both are env-overridable (CLAUDE_MODEL_FAST / CLAUDE_MODEL_SMART).
 
+Every agent returns JSON. `_json_chat` parses it and, when a Pydantic model is
+supplied, validates the shape. On a parse/validation failure it retries once
+with the error fed back to the model, then raises `LLMOutputError`. Without
+that, a hallucinated shape propagated silently to the UI.
+
 Note on prompt caching: the system prompts here are short (a few hundred
-tokens), well below Anthropic's minimum cacheable prefix (2048 tokens on
-Sonnet, 4096 on Haiku). Ephemeral caching would therefore not trigger, so it
-is intentionally not used — the cost wins come from model routing, dropping
+tokens), below Anthropic's minimum cacheable prefix (model-dependent,
+512-4096 tokens). Ephemeral caching would therefore not trigger, so it is
+intentionally not used — the cost wins come from model routing, dropping
 redundant calls, deterministic pre-filters, and result caching instead.
 """
 
 import json
 import os
-from typing import Any, AsyncIterator, Dict
+from collections.abc import AsyncIterator
+from typing import Any
 
 import anthropic
+from pydantic import BaseModel, ValidationError
+
+try:
+    from ..schemas import (
+        CandidateSynthesisReport,
+        CVProfile,
+        ExtractedInterviewSignals,
+        FairnessReport,
+        ProfileJobScore,
+        TestSheetParseResult,
+    )
+except ImportError:  # running with `backend/` as the root (native dev)
+    from schemas import (  # type: ignore
+        CandidateSynthesisReport,
+        CVProfile,
+        ExtractedInterviewSignals,
+        FairnessReport,
+        ProfileJobScore,
+        TestSheetParseResult,
+    )
 
 # ---------------------------------------------------------------------------
 # Client + model tiers
@@ -30,8 +56,10 @@ _client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""))
 
 # Cheap model for simple structured extraction
 FAST_MODEL = os.getenv("CLAUDE_MODEL_FAST", "claude-haiku-4-5")
-# Smarter model for reasoning-heavy steps
-SMART_MODEL = os.getenv("CLAUDE_MODEL_SMART", "claude-sonnet-4-6")
+# Smarter model for reasoning-heavy steps.
+# claude-sonnet-5 supersedes claude-sonnet-4-6 and is cheaper ($2/$10 per MTok
+# vs $3/$15), so it is the default on both counts.
+SMART_MODEL = os.getenv("CLAUDE_MODEL_SMART", "claude-sonnet-5")
 
 # Back-compat: a single override applies to the smart tier
 if os.getenv("CLAUDE_MODEL"):
@@ -42,15 +70,53 @@ if os.getenv("CLAUDE_MODEL"):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _strip_fences(raw: str) -> str:
+class LLMOutputError(RuntimeError):
+    """The model returned something that is not the JSON shape we asked for."""
+
+
+def strip_fences(raw: str) -> str:
     """Remove markdown ```json ... ``` code fences if present."""
     raw = raw.strip()
     if raw.startswith("```"):
         parts = raw.split("```")
-        raw = parts[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
+        if len(parts) > 1:
+            raw = parts[1]
+        if raw.lstrip().startswith("json"):
+            raw = raw.lstrip()[4:]
     return raw.strip()
+
+
+def parse_json_response(raw: str) -> Any:
+    """Parse a model response that is expected to be a JSON document.
+
+    Tolerates code fences and stray prose around the JSON body.
+    """
+    text = strip_fences(raw)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    # Fall back to the outermost {...} / [...] span.
+    for opener, closer in (("{", "}"), ("[", "]")):
+        start, end = text.find(opener), text.rfind(closer)
+        if start != -1 and end > start:
+            try:
+                return json.loads(text[start : end + 1])
+            except json.JSONDecodeError:
+                continue
+    raise LLMOutputError(f"Model did not return valid JSON (got {text[:200]!r})")
+
+
+def _text_of(msg: Any) -> str:
+    """Concatenate every text block of a response.
+
+    Reading `content[0].text` breaks as soon as the first block is not text
+    (a thinking block, for instance), which is exactly what happens if the
+    model tier is ever switched to a thinking-enabled one.
+    """
+    return "".join(
+        block.text for block in msg.content if getattr(block, "type", None) == "text"
+    ).strip()
 
 
 async def _chat(system: str, user: str, *, model: str, max_tokens: int = 2048) -> str:
@@ -61,7 +127,47 @@ async def _chat(system: str, user: str, *, model: str, max_tokens: int = 2048) -
         system=system,
         messages=[{"role": "user", "content": user}],
     )
-    return msg.content[0].text
+    return _text_of(msg)
+
+
+async def _json_chat(
+    system: str,
+    user: str,
+    *,
+    model: str,
+    max_tokens: int = 2048,
+    schema: type[BaseModel] | None = None,
+) -> dict[str, Any]:
+    """Call the model, parse JSON, optionally validate, retry once on failure.
+
+    The retry appends the parse/validation error to the user message so the
+    model can correct itself rather than reproducing the same broken output.
+    """
+    attempt_user = user
+    last_error: Exception | None = None
+
+    for attempt in range(2):
+        raw = await _chat(system, attempt_user, model=model, max_tokens=max_tokens)
+        try:
+            data = parse_json_response(raw)
+            if schema is not None:
+                # Validate, then hand back the *raw* dict: downstream agents and
+                # the frontend consume plain JSON, and dropping unknown keys here
+                # would silently discard fields the prompt asked for.
+                schema.model_validate(data)
+            if not isinstance(data, dict):
+                raise LLMOutputError(f"Expected a JSON object, got {type(data).__name__}")
+            return data
+        except (LLMOutputError, ValidationError) as exc:
+            last_error = exc
+            if attempt == 0:
+                attempt_user = (
+                    f"{user}\n\n---\nYour previous answer was rejected: {exc}\n"
+                    "Return ONLY the valid JSON object described in the system prompt, "
+                    "with no prose and no code fences."
+                )
+
+    raise LLMOutputError(f"Model output invalid after a retry: {last_error}")
 
 
 async def _chat_stream(
@@ -114,10 +220,14 @@ Expected JSON:
 """
 
 
-async def extract_interview_signals(review_text: str) -> Dict[str, Any]:
+async def extract_interview_signals(review_text: str) -> dict[str, Any]:
     """Call Claude (fast tier) to extract structured signals from interview text."""
-    raw = await _chat(INTERVIEW_SYSTEM_PROMPT, review_text, model=FAST_MODEL)
-    return json.loads(_strip_fences(raw))
+    return await _json_chat(
+        INTERVIEW_SYSTEM_PROMPT,
+        review_text,
+        model=FAST_MODEL,
+        schema=ExtractedInterviewSignals,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -149,10 +259,14 @@ Expected JSON:
 """
 
 
-async def parse_test_sheet(file_text: str) -> Dict[str, Any]:
+async def parse_test_sheet(file_text: str) -> dict[str, Any]:
     """Call Claude (fast tier) to extract structured scores from a test sheet."""
-    raw = await _chat(TEST_PARSE_SYSTEM_PROMPT, file_text, model=FAST_MODEL)
-    return json.loads(_strip_fences(raw))
+    return await _json_chat(
+        TEST_PARSE_SYSTEM_PROMPT,
+        file_text,
+        model=FAST_MODEL,
+        schema=TestSheetParseResult,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -190,14 +304,18 @@ Expected JSON:
 """
 
 
-async def parse_cv_structure(cv_text: str) -> Dict[str, Any]:
+async def parse_cv_structure(cv_text: str) -> dict[str, Any]:
     """Use Claude (fast tier) to extract a structured profile from raw CV text.
 
     This single call also returns full_name — there is no separate
     name-extraction request (that would be a redundant round-trip).
     """
-    raw = await _chat(CV_PARSE_SYSTEM_PROMPT, cv_text[:8000], model=FAST_MODEL)
-    return json.loads(_strip_fences(raw))
+    return await _json_chat(
+        CV_PARSE_SYSTEM_PROMPT,
+        cv_text[:8000],
+        model=FAST_MODEL,
+        schema=CVProfile,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -226,11 +344,16 @@ Expected JSON:
 """
 
 
-async def score_profile_job(profile: Dict[str, Any], job: Dict[str, Any]) -> Dict[str, Any]:
+async def score_profile_job(profile: dict[str, Any], job: dict[str, Any]) -> dict[str, Any]:
     """Use Claude (smart tier) to score a candidate profile against a job description."""
     payload = json.dumps({"profile": profile, "job": job}, indent=2, ensure_ascii=False)
-    raw = await _chat(SCORE_SYSTEM_PROMPT, payload, model=SMART_MODEL, max_tokens=512)
-    return json.loads(_strip_fences(raw))
+    return await _json_chat(
+        SCORE_SYSTEM_PROMPT,
+        payload,
+        model=SMART_MODEL,
+        max_tokens=512,
+        schema=ProfileJobScore,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -285,11 +408,16 @@ Expected JSON:
 """
 
 
-async def generate_synthesis(assessment_object: Dict[str, Any]) -> Dict[str, Any]:
+async def generate_synthesis(assessment_object: dict[str, Any]) -> dict[str, Any]:
     """Call Claude (smart tier) to generate the draft synthesis report (with citations)."""
     payload = json.dumps(assessment_object, indent=2, ensure_ascii=False)
-    raw = await _chat(SYNTHESIS_SYSTEM_PROMPT, payload, model=SMART_MODEL, max_tokens=3072)
-    return json.loads(_strip_fences(raw))
+    return await _json_chat(
+        SYNTHESIS_SYSTEM_PROMPT,
+        payload,
+        model=SMART_MODEL,
+        max_tokens=3072,
+        schema=CandidateSynthesisReport,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -322,17 +450,22 @@ Rules:
 
 
 async def critique_and_refine_synthesis(
-    assessment_object: Dict[str, Any],
-    draft_report: Dict[str, Any],
-) -> Dict[str, Any]:
+    assessment_object: dict[str, Any],
+    draft_report: dict[str, Any],
+) -> dict[str, Any]:
     """Run Claude (smart tier) as a critic on the draft synthesis; return the refined version."""
     payload = json.dumps(
         {"evidence": assessment_object, "draft_report": draft_report},
         indent=2,
         ensure_ascii=False,
     )
-    raw = await _chat(CRITIC_SYSTEM_PROMPT, payload, model=SMART_MODEL, max_tokens=3072)
-    return json.loads(_strip_fences(raw))
+    return await _json_chat(
+        CRITIC_SYSTEM_PROMPT,
+        payload,
+        model=SMART_MODEL,
+        max_tokens=3072,
+        schema=CandidateSynthesisReport,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -368,18 +501,23 @@ Expected JSON:
 """
 
 
-async def fairness_check(synthesis_report: Dict[str, Any]) -> Dict[str, Any]:
+async def fairness_check(synthesis_report: dict[str, Any]) -> dict[str, Any]:
     """Run Claude (smart tier) as a fairness reviewer on the final synthesis report."""
     payload = json.dumps(synthesis_report, indent=2, ensure_ascii=False)
-    raw = await _chat(FAIRNESS_SYSTEM_PROMPT, payload, model=SMART_MODEL, max_tokens=1024)
-    return json.loads(_strip_fences(raw))
+    return await _json_chat(
+        FAIRNESS_SYSTEM_PROMPT,
+        payload,
+        model=SMART_MODEL,
+        max_tokens=1024,
+        schema=FairnessReport,
+    )
 
 
 # ---------------------------------------------------------------------------
 # Streaming variant of the synthesis (for the live results page)  (SMART)
 # ---------------------------------------------------------------------------
 
-async def generate_synthesis_stream(assessment_object: Dict[str, Any]) -> AsyncIterator[str]:
+async def generate_synthesis_stream(assessment_object: dict[str, Any]) -> AsyncIterator[str]:
     """Stream the draft synthesis report token by token (for SSE)."""
     payload = json.dumps(assessment_object, indent=2, ensure_ascii=False)
     async for delta in _chat_stream(

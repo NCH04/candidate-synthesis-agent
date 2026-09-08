@@ -11,6 +11,9 @@ license: mit
 
 # AI Candidate Synthesis Agent
 
+[![CI](https://github.com/NCH04/candidate-synthesis-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/NCH04/candidate-synthesis-agent/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 A multi-agent recruitment assistant that turns raw hiring evidence — a CV, a
 technical test sheet, and free-form interview notes — into a single
 **standardized, citation-backed, bias-checked candidate report**.
@@ -21,14 +24,39 @@ matching runs locally via sentence-transformers.
 
 ---
 
+## Screenshots
+
+| Input | Live synthesis |
+|---|---|
+| ![Input form](docs/screenshots/1-input.png) | ![Live synthesis stream](docs/screenshots/3-streaming.png) |
+
+![Final report](docs/screenshots/5-results-hero.png)
+
+Regenerate them any time against a running demo instance:
+
+```bash
+python scripts/screenshots.py
+```
+
+---
+
 ## 1. Quick recap
 
 Recruitment evaluation is fragmented across resumes, tests, interview notes,
 and recruiter impressions. The result is inconsistent decisions, subjective
 assessments, and weak comparability across candidates.
 
-This project consolidates the three main evaluation sources into one
-explainable, structured synthesis report:
+This project attacks the first half of that problem: it consolidates the three
+evaluation sources for **one candidate** into a single explainable, structured
+report, produced the same way every time — same dimensions, same 0-1 scales,
+same citation format, same fairness pass. Two candidates evaluated by two
+recruiters come out in a directly comparable shape.
+
+It does **not** yet do the second half. Nothing is persisted: each run is
+independent, there is no evaluation history and no side-by-side view. Those are
+the next two items on the roadmap.
+
+Per-candidate, the pipeline takes:
 
 | Input              | Format                  | Processed by                                  |
 |--------------------|-------------------------|-----------------------------------------------|
@@ -55,8 +83,12 @@ model (Haiku) while only the reasoning steps use a stronger one (Sonnet),
 test sheets in a standard layout are parsed for free with a regex, a
 deterministic word-scan skips the fairness LLM call when nothing sensitive is
 present, parsed CVs are cached by content hash, and an optional economy mode
-drops the two priciest passes. A **demo mode** serves pre-computed sample
-results with **zero API calls** — ideal for a public deployment.
+drops the priciest pass. A **demo mode** serves pre-computed sample results
+with **zero API calls** — ideal for a public deployment.
+
+Every agent's JSON output is **validated against a Pydantic contract** before it
+reaches the next stage, with one automatic retry that feeds the validation error
+back to the model. A hallucinated shape fails loudly instead of reaching the UI.
 
 ### What the recruiter gets
 
@@ -68,6 +100,24 @@ results with **zero API calls** — ideal for a public deployment.
 - A fairness review block flagging biased phrasing
 - Recommended next steps tailored to the decision
 
+### How the score is computed
+
+Each dimension is a weighted average over the sources that actually carry a
+signal for it, with the weights **renormalised to sum to 1**:
+
+| Dimension           | Sources                                          |
+|---------------------|--------------------------------------------------|
+| `technical_fit`     | CV/job match + technical test items              |
+| `motivation_fit`    | motivation test items + interview motivation signal |
+| `communication_fit` | soft-skill test items + interview psychological signal |
+| `overall_score`     | all three sources, test = mean of its scored buckets |
+
+A dimension a source says nothing about is **dropped, not counted as zero**. A
+test sheet listing only technical competencies therefore produces the same
+overall score as a balanced one for the same candidate — the layout of the
+evaluation form must never decide the hire. `test_assessment.scored_dimensions`
+records which buckets the sheet actually scored.
+
 ---
 
 ## 2. Technologies
@@ -78,7 +128,7 @@ results with **zero API calls** — ideal for a public deployment.
 |------------------|----------------------------------------------------------------|
 | API framework    | FastAPI + Uvicorn                                              |
 | Validation       | Pydantic v2                                                    |
-| LLM              | Anthropic Claude (`claude-sonnet-4-6` by default)              |
+| LLM              | Anthropic Claude (`claude-sonnet-5` + `claude-haiku-4-5`)      |
 | PDF extraction   | `pdfplumber`                                                   |
 | Semantic matching| `sentence-transformers` — `all-MiniLM-L6-v2` (local, no API)  |
 | Streaming        | FastAPI `StreamingResponse` + SSE                              |
@@ -88,15 +138,20 @@ Service layout:
 
 ```
 backend/
-├── main.py                  # FastAPI app + endpoints
-├── schemas.py               # Pydantic models (assessment, report, citations, fairness)
+├── main.py                  # FastAPI app, endpoints, auth / rate limit / upload guards
+├── schemas.py               # Pydantic contracts (assessment, report, citations, agent outputs)
 ├── jobs.json                # Local job catalogue (10 sample roles)
+├── demo_data/sample.json    # Pre-computed sample used by DEMO_MODE
+├── tests/                   # pytest suite — no API key, no network
 └── services/
-    ├── cv_service.py        # PDF → structured profile → score against job
-    ├── llm_service.py       # All Claude agents (parse, extract, synthesise, critic, fairness)
-    ├── skill_match_service.py  # Local embedding-based skill matching
-    ├── jobs_service.py      # Job catalogue loader
-    └── fusion_service.py    # Weighted fusion (CV 35% / Test 40% / Interview 25%)
+    ├── cv_service.py           # PDF → structured profile → score against job
+    ├── llm_service.py          # All Claude agents + JSON validation & retry
+    ├── skill_match_service.py  # Local embedding-based skill matching (lazy torch import)
+    ├── test_parser_service.py  # Deterministic regex test-sheet parser
+    ├── fairness_service.py     # Local sensitive-term pre-filter
+    ├── jobs_service.py         # Job catalogue loader
+    ├── demo_service.py         # Zero-API-call sample responses
+    └── fusion_service.py       # Weighted fusion (CV 35% / Test 40% / Interview 25%)
 ```
 
 ### Frontend (`frontend/`)
@@ -213,14 +268,19 @@ All endpoints are mounted under `/api`.
 | POST   | `/candidate/pipeline/prepare`     | Run steps 1-5, return assessment for streaming use   |
 | POST   | `/candidate/full-pipeline`        | Non-streaming end-to-end pipeline                    |
 | GET    | `/jobs/list`                      | List the available jobs catalogue                    |
-| GET    | `/health`                         | Health check                                         |
+| GET    | `/config`                         | Runtime flags (demo/economy mode, active models)     |
+| GET    | `/health`                         | Health check (unauthenticated)                       |
+
+The SSE stream emits four event types: `phase` (real server-side pipeline stage —
+`draft` / `critic` / `fairness` / `done`), `delta` (draft tokens), `final` (the
+refined, fairness-checked report) and `error`.
 
 ### 3.6 Customisation
 
 - **Adding jobs** — edit `backend/jobs.json`. Each entry is `{ key, title, skills, summary }`. The UI picks them up at startup.
 - **Tuning fusion weights** — `WEIGHTS` in `backend/services/fusion_service.py` (defaults: CV 35% / Test 40% / Interview 25%).
 - **Semantic match threshold** — `_DEFAULT_THRESHOLD` in `backend/services/skill_match_service.py` (default cosine 0.55).
-- **Model routing** — `CLAUDE_MODEL_FAST` (default `claude-haiku-4-5`) and `CLAUDE_MODEL_SMART` (default `claude-sonnet-4-6`) in `.env`.
+- **Model routing** — `CLAUDE_MODEL_FAST` (default `claude-haiku-4-5`) and `CLAUDE_MODEL_SMART` (default `claude-sonnet-5`) in `.env`.
 
 ### 3.7 Cost controls
 
@@ -232,7 +292,7 @@ The system is designed to keep the Anthropic bill low:
 | **Regex test parser** | Standard-layout test sheets parsed for free; LLM only as fallback | `backend/services/test_parser_service.py` |
 | **Fairness pre-filter** | Local word-scan; LLM fairness call only when a sensitive term appears | `backend/services/fairness_service.py` |
 | **Result cache** | Re-uploading the same CV skips the parse (hashed by content) | `backend/services/cv_service.py` |
-| **Economy mode** | Skip the critic + fairness passes (2 fewer Claude calls) | `ECONOMY_MODE=true` |
+| **Economy mode** | Skip the critic pass (1 fewer Claude call). The fairness review is never skipped — it is a compliance guardrail | `ECONOMY_MODE=true` |
 | **Demo mode** | Serve pre-computed sample results — **zero API calls** | `DEMO_MODE=true` |
 
 ### 3.8 Demo mode
@@ -243,6 +303,40 @@ for the live effect, and the UI shows a demo banner plus a one-click
 **“Run sample evaluation”** button. This lets you expose a public demo without
 anyone spending your API budget. Customise the sample by editing
 `backend/demo_data/sample.json`.
+
+### 3.9 Hardening for a live deployment
+
+Every guard is a no-op until configured, so local dev and the demo deployment
+are unchanged. **Set these before exposing a live (non-demo) deployment** —
+without `APP_API_KEY` the API is an unauthenticated proxy to your paid Claude
+account.
+
+| Env var | Effect | Default |
+|---------|--------|---------|
+| `APP_API_KEY` | Every `/api` call must send `X-API-Key: <value>` | unset (open) |
+| `ALLOWED_ORIGINS` | Comma-separated CORS allow-list | `*` |
+| `MAX_UPLOAD_MB` | Uploads streamed and refused past this size (413) | `10` |
+| `RATE_LIMIT_PER_MINUTE` | Per-IP sliding window; `0` disables | `20` |
+
+The `/api/candidate/synthesis/{generate,stream}` routes validate their body
+against the assessment schema before it reaches Claude, so they cannot be used
+as a free prompt-injection surface.
+
+### 3.10 Tests
+
+```bash
+pip install -r backend/requirements-dev.txt
+pytest -q            # 76 tests, no API key, no network
+ruff check .
+```
+
+The suite runs entirely offline: the pure services (fusion, test parser,
+fairness pre-filter) are tested directly, and the API tests run under
+`DEMO_MODE`. `sentence-transformers` is imported lazily, so neither the tests
+nor CI pull the ~2 GB torch stack.
+
+CI runs lint + tests, a frontend typecheck + build, and a Docker image build on
+every push and pull request (`.github/workflows/ci.yml`).
 
 ---
 
@@ -312,11 +406,14 @@ This project is being actively extended. Items already shipped vs. planned:
 - [x] Public demo on Hugging Face Spaces
 - [x] Cost controls (model routing, regex/heuristic pre-filters, result cache, economy mode)
 - [x] Demo mode (zero-API-call sample for public deployments)
+- [x] Schema-validated agent outputs with automatic retry
+- [x] Real server-driven SSE progress phases
+- [x] Hardening: API key, per-IP rate limit, upload size cap, CORS allow-list
+- [x] Tests (pytest — no API key, no network) + CI on GitHub Actions
 - [ ] Multi-candidate comparison view
 - [ ] SQLite persistence + evaluation history
 - [ ] PDF export of the final report
-- [ ] CI (lint + tests) on GitHub Actions
-- [ ] Tests (pytest + vitest)
+- [ ] Frontend component tests (vitest)
 
 This section will be updated as new features land.
 
