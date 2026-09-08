@@ -341,22 +341,43 @@ no cold-start that matters for a portfolio demo).
    - **Space SDK**: `Docker`
    - **Hardware**: CPU basic is enough (the embedding model runs on CPU)
    - Make the Space **public** so the demo URL is shareable
-2. **Push this repo to the Space** (Spaces are git repos):
+2. **Add the Space as a git remote** (Spaces are git repos):
    ```bash
    git remote add space https://huggingface.co/spaces/<your-user>/<space-name>
-   git push space main
    ```
-   The YAML frontmatter at the top of this README tells Spaces to build with
-   Docker on port 7860 — no extra config file required.
-3. **Set the secret** in `Settings → Variables and secrets`:
-   - For a **live** demo: `ANTHROPIC_API_KEY` = your Anthropic key (mark as **Secret**).
-   - For a **public** demo where strangers must not spend your budget: set the
-     variable `DEMO_MODE` = `true` instead (no API key needed). Every visitor
-     gets the pre-computed sample evaluation with zero API calls. **This is the
+3. **Push with the sync script**:
+   ```bash
+   ./scripts/sync-space.sh
+   ```
+4. **Set the variable** in `Settings → Variables and secrets`:
+   - For a **live** demo: `ANTHROPIC_API_KEY` (mark as **Secret**) **and**
+     `APP_API_KEY` — without the second one the API is an unauthenticated
+     proxy to your Anthropic account. See §3.9.
+   - For a **public** demo where strangers must not spend your budget: set
+     `DEMO_MODE` = `true` instead (no API key needed). Every visitor gets the
+     pre-computed sample evaluation with zero API calls. **This is the
      recommended setting for a public portfolio link.**
-4. The Space builds automatically. First build takes ~5 minutes. After that:
+5. The Space builds automatically. First build takes ~5 minutes. After that:
    - Public URL: `https://huggingface.co/spaces/<your-user>/<space-name>`
    - Embedded iframe URL for portfolios: `https://<your-user>-<space-name>.hf.space`
+
+#### Why a sync script rather than a plain `git push space main`
+
+Spaces reads its build config (`sdk: docker`, `app_port: 7860`) from YAML
+frontmatter at the very top of `README.md`. GitHub renders that same block as a
+metadata table above the title, which is noise on a portfolio repo. So `main`
+keeps a clean README, and `scripts/sync-space.sh` derives a Space-only branch
+that prepends the block from `deploy/hf-space-frontmatter.md`.
+
+That `space` branch is a **build artefact**: it is deleted, recreated from
+`main` and force-pushed on every run, so it can never drift or conflict. Never
+commit to it by hand — the next sync discards the commit. Edit the Space
+metadata (emoji, colours, title) in `deploy/hf-space-frontmatter.md` instead.
+
+```bash
+./scripts/sync-space.sh              # rebuild from main and push
+./scripts/sync-space.sh --no-push    # rebuild locally and inspect first
+```
 
 ### 4.2 Any other container host (Fly.io, Render, Railway, your VPS…)
 
