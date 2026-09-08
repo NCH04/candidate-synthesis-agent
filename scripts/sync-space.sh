@@ -65,9 +65,15 @@ if git show "$SOURCE_BRANCH:README.md" | head -1 | grep -q '^---$'; then
   git checkout $SOURCE_BRANCH && git pull --ff-only origin $SOURCE_BRANCH"
 fi
 
+# Snapshot the frontmatter before switching branches: the working tree is about
+# to become the source branch's, which may not carry deploy/ at all.
+FRONTMATTER_TMP="$(mktemp)"
+cat "$FRONTMATTER" > "$FRONTMATTER_TMP"
+
 ORIGINAL_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 BUILT=0
 cleanup() {
+    rm -f "$FRONTMATTER_TMP"
     git checkout --quiet "$ORIGINAL_BRANCH" 2>/dev/null || true
     # Drop the artefact if we failed partway through building it.
     [ "$BUILT" -eq 0 ] && git branch --quiet -D "$SPACE_BRANCH" 2>/dev/null
@@ -79,7 +85,7 @@ echo "Rebuilding '$SPACE_BRANCH' from '$SOURCE_BRANCH'…"
 git branch --quiet -D "$SPACE_BRANCH" 2>/dev/null || true
 git checkout --quiet -b "$SPACE_BRANCH" "$SOURCE_BRANCH"
 
-cat "$FRONTMATTER" README.md > README.space.md
+cat "$FRONTMATTER_TMP" README.md > README.space.md
 mv README.space.md README.md
 
 git add README.md
