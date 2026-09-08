@@ -1,44 +1,35 @@
-import { useEffect, useState } from 'react'
-
 const STEPS = [
   {
     id: 'cv_parsed',
     label: 'Parsing CV',
     description: 'Claude — extracting skills, experience, education…',
-    delay: 400,
   },
   {
     id: 'profile_scored',
     label: 'Scoring profile against job',
     description: 'Semantic skill match + Claude fit evaluation…',
-    delay: 3500,
   },
   {
     id: 'interview_extracted',
     label: 'Extracting interview signals',
     description: 'Claude — parsing recruiter notes…',
-    delay: 6000,
   },
   {
     id: 'fusion_completed',
     label: 'Building fusion object',
     description: 'Weighted combination of CV + test + interview…',
-    delay: 8000,
   },
 ]
 
+/**
+ * The prepare phase is a single request, so the server reports no intermediate
+ * progress for it. The steps below are therefore presented as "what is running"
+ * — not as a checklist that ticks itself off on a timer, which is what this
+ * screen used to do regardless of the backend's actual state.
+ *
+ * The synthesis phase *does* report real progress: see StreamingPage.
+ */
 export default function ProcessingPage() {
-  const [visible, setVisible] = useState<Set<string>>(new Set())
-
-  useEffect(() => {
-    const timers = STEPS.map(step =>
-      setTimeout(() => {
-        setVisible(v => new Set([...v, step.id]))
-      }, step.delay),
-    )
-    return () => timers.forEach(clearTimeout)
-  }, [])
-
   return (
     <div className="max-w-xl mx-auto py-12">
       <div className="text-center mb-10">
@@ -54,43 +45,28 @@ export default function ProcessingPage() {
       </div>
 
       <div className="space-y-3">
-        {STEPS.map((step, i) => {
-          const isVisible = visible.has(step.id)
-          const indices = [...visible].map(id => STEPS.findIndex(s => s.id === id)).sort()
-          const lastIdx = indices.length ? indices[indices.length - 1] : -1
-          const isActive = isVisible && i === lastIdx
-
-          return (
-            <div
-              key={step.id}
-              className={`flex items-start gap-4 rounded-xl border px-5 py-4 transition-all duration-500
-                ${isVisible
-                  ? 'border-slate-200 bg-white shadow-sm opacity-100 translate-y-0'
-                  : 'border-transparent bg-transparent opacity-0 translate-y-2 pointer-events-none'}`}
-            >
-              <div className={`mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full
-                ${isActive ? 'bg-brand-100' : 'bg-green-100'}`}>
-                {isActive ? (
-                  <span className="pulse-dot h-2 w-2 rounded-full bg-brand-500" />
-                ) : (
-                  <svg className="w-3.5 h-3.5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
-              </div>
-
-              <div>
-                <p className={`text-sm font-semibold ${isActive ? 'text-brand-700' : 'text-slate-700'}`}>
-                  {step.label}
-                </p>
-                <p className="text-xs text-slate-400">{step.description}</p>
-              </div>
-
-              <span className="ml-auto text-xs text-slate-300 font-mono">{i + 1}/{STEPS.length}</span>
+        {STEPS.map((step, i) => (
+          <div
+            key={step.id}
+            className="flex items-start gap-4 rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm"
+          >
+            <div className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-brand-100">
+              <span className="pulse-dot h-2 w-2 rounded-full bg-brand-500" />
             </div>
-          )
-        })}
+
+            <div>
+              <p className="text-sm font-semibold text-slate-700">{step.label}</p>
+              <p className="text-xs text-slate-400">{step.description}</p>
+            </div>
+
+            <span className="ml-auto text-xs text-slate-300 font-mono">{i + 1}/{STEPS.length}</span>
+          </div>
+        ))}
       </div>
+
+      <p className="mt-6 text-center text-xs text-slate-400">
+        These four steps run server-side in a single request.
+      </p>
     </div>
   )
 }

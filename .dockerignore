@@ -45,3 +45,12 @@ test_sheet_*.txt
 docker-compose.yml
 Dockerfile
 .dockerignore
+
+# Local virtualenv + test/CI assets (not needed in the runtime image)
+.venv/
+backend/tests/
+pytest.ini
+ruff.toml
+.github/
+docs/
+scripts/

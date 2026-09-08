@@ -1,4 +1,4 @@
-import { CandidateAssessment, FormValues, PipelineResult } from '../types'
+import { CandidateAssessment, FormValues } from '../types'
 
 const BASE = '/api'
 
@@ -17,15 +17,6 @@ function toFormData(form: FormValues): FormData {
   return fd
 }
 
-export async function runFullPipeline(form: FormValues): Promise<PipelineResult> {
-  const res = await fetch(`${BASE}/candidate/full-pipeline`, { method: 'POST', body: toFormData(form) })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(err.detail || 'Pipeline failed')
-  }
-  return res.json()
-}
-
 export async function preparePipeline(form: FormValues): Promise<CandidateAssessment> {
   const res = await fetch(`${BASE}/candidate/pipeline/prepare`, { method: 'POST', body: toFormData(form) })
   if (!res.ok) {
@@ -36,15 +27,25 @@ export async function preparePipeline(form: FormValues): Promise<CandidateAssess
   return data.assessment as CandidateAssessment
 }
 
+export type SynthesisPhase = 'draft' | 'draft-retry' | 'critic' | 'fairness' | 'done'
+
+interface StreamHandlers {
+  onDelta: (text: string) => void
+  onFinal: (report: unknown) => void
+  onPhase?: (phase: SynthesisPhase) => void
+  onError?: (err: string) => void
+}
+
 /**
  * Streaming variant — yields the synthesis draft token by token (SSE),
  * then emits one final 'final' event with the refined + fairness-checked report.
+ *
+ * The server also emits `phase` events for the real pipeline stage it is in,
+ * so the UI reports actual progress instead of guessing with timers.
  */
 export async function streamSynthesis(
   assessmentObject: unknown,
-  onDelta: (text: string) => void,
-  onFinal: (report: unknown) => void,
-  onError?: (err: string) => void,
+  { onDelta, onFinal, onPhase, onError }: StreamHandlers,
 ): Promise<void> {
   const res = await fetch(`${BASE}/candidate/synthesis/stream`, {
     method: 'POST',
@@ -52,7 +53,11 @@ export async function streamSynthesis(
     body: JSON.stringify(assessmentObject),
   })
   if (!res.ok || !res.body) {
-    onError?.(`Stream failed: ${res.status}`)
+    const detail = await res
+      .json()
+      .then((b: { detail?: string }) => b.detail)
+      .catch(() => undefined)
+    onError?.(detail || `Stream failed: ${res.status}`)
     return
   }
 
@@ -82,6 +87,7 @@ export async function streamSynthesis(
       try {
         const payload = JSON.parse(data)
         if (event === 'delta') onDelta(payload.text ?? '')
+        else if (event === 'phase') onPhase?.(payload.phase as SynthesisPhase)
         else if (event === 'final') onFinal(payload)
         else if (event === 'error') onError?.(payload.message ?? 'unknown error')
       } catch {

@@ -19,7 +19,7 @@ from __future__ import annotations
 import hashlib
 import io
 from collections import OrderedDict
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import pdfplumber
 
@@ -31,17 +31,17 @@ from .skill_match_service import match_skills
 # ---------------------------------------------------------------------------
 
 _CACHE_MAX = 64
-_profile_cache: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+_profile_cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
 
 
-def _cache_get(key: str) -> Optional[Dict[str, Any]]:
+def _cache_get(key: str) -> dict[str, Any] | None:
     if key in _profile_cache:
         _profile_cache.move_to_end(key)
         return _profile_cache[key]
     return None
 
 
-def _cache_put(key: str, value: Dict[str, Any]) -> None:
+def _cache_put(key: str, value: dict[str, Any]) -> None:
     _profile_cache[key] = value
     _profile_cache.move_to_end(key)
     while len(_profile_cache) > _CACHE_MAX:
@@ -58,7 +58,7 @@ def _hash_bytes(data: bytes) -> str:
 
 def extract_text_from_pdf(file_bytes: bytes) -> str:
     """Extract plain text from a PDF (uses pdfplumber)."""
-    text_parts: List[str] = []
+    text_parts: list[str] = []
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         for page in pdf.pages:
             page_text = page.extract_text() or ""
@@ -67,7 +67,7 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
     return "\n".join(text_parts).strip()
 
 
-async def parse_cv(file_bytes: bytes, filename: str, content_type: str) -> Dict[str, Any]:
+async def parse_cv(file_bytes: bytes, filename: str, content_type: str) -> dict[str, Any]:
     """
     Parse a CV file end-to-end:
       - extract raw text (PDF or text/plain),
@@ -106,17 +106,17 @@ async def parse_cv(file_bytes: bytes, filename: str, content_type: str) -> Dict[
 
 
 async def score_profile_against_job(
-    profile: Dict[str, Any],
-    job: Dict[str, Any],
-) -> Dict[str, Any]:
+    profile: dict[str, Any],
+    job: dict[str, Any],
+) -> dict[str, Any]:
     """
     Combine semantic skill matching (local embeddings) with Claude-based scoring.
 
     Returns:
       { "score", "matched_skills", "missing_skills", "experience_fit", "summary" }
     """
-    candidate_skills: List[str] = profile.get("skills") or []
-    target_skills: List[str] = job.get("skills") or job.get("target_skills") or []
+    candidate_skills: list[str] = profile.get("skills") or []
+    target_skills: list[str] = job.get("skills") or job.get("target_skills") or []
 
     # 1) Semantic skill match (no API call — local model)
     skill_match = match_skills(candidate_skills, target_skills)
@@ -149,8 +149,8 @@ async def parse_and_score(
     file_bytes: bytes,
     filename: str,
     content_type: str,
-    job: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+    job: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """End-to-end: parse CV + (optionally) score against a job."""
     profile = await parse_cv(file_bytes, filename, content_type)
 

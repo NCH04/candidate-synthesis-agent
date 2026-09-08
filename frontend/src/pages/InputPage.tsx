@@ -178,7 +178,7 @@ export default function InputPage({ onSubmit, jobs, demoMode, onRunDemo }: Props
             </p>
           </div>
           <button type="button" onClick={onRunDemo} className="btn-primary whitespace-nowrap">
-            ▶ Run sample evaluation
+            Run sample evaluation
           </button>
         </div>
       )}
