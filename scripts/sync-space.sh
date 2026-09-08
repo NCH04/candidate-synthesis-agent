@@ -48,11 +48,33 @@ fi
 git show-ref --verify --quiet "refs/heads/$SOURCE_BRANCH" \
     || die "source branch '$SOURCE_BRANCH' does not exist"
 
-if [ "$PUSH" -eq 1 ] && ! git remote get-url "$SPACE_REMOTE" >/dev/null 2>&1; then
-    die "remote '$SPACE_REMOTE' is not configured. Run:
-  git remote add $SPACE_REMOTE https://huggingface.co/spaces/<user>/<space-name>
+if [ "$PUSH" -eq 1 ]; then
+    git remote get-url "$SPACE_REMOTE" >/dev/null 2>&1 || die \
+"remote '$SPACE_REMOTE' is not configured. Run:
+  git remote add $SPACE_REMOTE https://huggingface.co/spaces/<hf-user>/<space-name>
 Or rebuild locally without pushing:
   $0 --no-push"
+
+    REMOTE_URL="$(git remote get-url "$SPACE_REMOTE")"
+
+    # Check the namespace exists on the Hub. A Space URL built from a GitHub
+    # username instead of a Hugging Face one fails with an opaque auth error.
+    case "$REMOTE_URL" in
+        *huggingface.co/spaces/*)
+            HF_OWNER="${REMOTE_URL#*huggingface.co/spaces/}"
+            HF_OWNER="${HF_OWNER%%/*}"
+            if command -v curl >/dev/null 2>&1; then
+                OWNER_STATUS="$(curl -s -o /dev/null -w '%{http_code}' \
+                    "https://huggingface.co/api/users/$HF_OWNER/overview" || echo 000)"
+                if [ "$OWNER_STATUS" = "404" ]; then
+                    die "'$HF_OWNER' is not a Hugging Face account (your GitHub
+username is not necessarily your HF one). Check it at https://huggingface.co/settings/profile
+then fix the remote:
+  git remote set-url $SPACE_REMOTE https://huggingface.co/spaces/<hf-user>/<space-name>"
+                fi
+            fi
+            ;;
+    esac
 fi
 
 # Validate the source before touching any branch, so a bad source can never
@@ -98,8 +120,19 @@ BUILT=1
 echo "  ✓ $SPACE_BRANCH built ($(git rev-parse --short HEAD))"
 
 if [ "$PUSH" -eq 1 ]; then
-    echo "Pushing to '$SPACE_REMOTE' ($(git remote get-url "$SPACE_REMOTE"))…"
-    git push --force "$SPACE_REMOTE" "$SPACE_BRANCH:main"
+    echo "Pushing to '$SPACE_REMOTE' ($REMOTE_URL)…"
+    if ! git push --force "$SPACE_REMOTE" "$SPACE_BRANCH:main"; then
+        die "push failed.
+
+Hugging Face dropped git password authentication. Use a User Access Token:
+  1. Create one with WRITE access at https://huggingface.co/settings/tokens
+  2. Push again — enter your HF username, and paste the TOKEN as the password
+     (\`git config --global credential.helper store\` saves it for next time)
+
+If the error mentions a missing repository, create the Space first at
+https://huggingface.co/new-space (SDK: Docker) under the same name as the
+remote URL."
+    fi
     echo "  ✓ pushed — the Space will rebuild automatically"
 else
     echo "  → not pushed. Inspect it, then:"
