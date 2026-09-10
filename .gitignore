@@ -25,6 +25,9 @@ dist/
 .vite/
 *.log
 
+# Local agent config (kept on disk, never committed)
+.claude/
+
 # Editor / OS files
 .DS_Store
 Thumbs.db
