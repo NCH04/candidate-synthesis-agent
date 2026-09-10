@@ -107,9 +107,14 @@ echo "Rebuilding '$SPACE_BRANCH' from '$SOURCE_BRANCH'…"
 git branch --quiet -D "$SPACE_BRANCH" 2>/dev/null || true
 git checkout --quiet -b "$SPACE_BRANCH" "$SOURCE_BRANCH"
 
-cat "$FRONTMATTER_TMP" README.md > README.space.md
-mv README.space.md README.md
+# Build the new README outside the repo: an intermediate file written here
+# would survive a crash and get swept into the next `git add -A`.
+BUILD_TMP="$(mktemp)"
+cat "$FRONTMATTER_TMP" README.md > "$BUILD_TMP"
+cat "$BUILD_TMP" > README.md
+rm -f "$BUILD_TMP"
 
+# Commit only the README: never sweep up stray files with `git add -A`.
 git add README.md
 git commit --quiet -m "chore(space): add Hugging Face Spaces frontmatter
 
