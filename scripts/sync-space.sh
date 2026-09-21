@@ -93,6 +93,13 @@ FRONTMATTER_TMP="$(mktemp)"
 cat "$FRONTMATTER" > "$FRONTMATTER_TMP"
 
 ORIGINAL_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+if [ "$ORIGINAL_BRANCH" = "$SPACE_BRANCH" ]; then
+    die "you are on '$SPACE_BRANCH', which this script deletes and recreates.
+Switch to your working branch first:
+  git checkout $SOURCE_BRANCH
+If you have commits on '$SPACE_BRANCH' you meant to keep, move them first:
+  git checkout $SOURCE_BRANCH && git cherry-pick <sha>"
+fi
 BUILT=0
 cleanup() {
     rm -f "$FRONTMATTER_TMP"
