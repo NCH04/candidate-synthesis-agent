@@ -26,8 +26,7 @@ dist/
 .vite/
 *.log
 
-# Build-time copies of backend fixtures (see scripts/build-static-demo.sh)
-frontend/src/generated/*.json
+# Static demo bundle (regenerate with scripts/build-static-demo.sh)
 frontend/dist-static/
 
 # Local agent config (kept on disk, never committed)

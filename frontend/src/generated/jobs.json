@@ -1,0 +1,62 @@
+[
+  {
+    "key": "391db21d-fc9f-4db5-b281-ff8005548735",
+    "title": "Senior Python Backend Engineer",
+    "skills": ["docker", "fastapi", "postgresql", "rest apis", "python", "microservices", "communication", "teamwork", "problem solving", "autonomy"],
+    "summary": "Senior backend engineer role focused on Python, FastAPI microservices, PostgreSQL and containerized deployments."
+  },
+  {
+    "key": "a7c142e8-3d21-4f90-b6e5-cc9012345678",
+    "title": "Full Stack Developer",
+    "skills": ["react", "typescript", "node.js", "postgresql", "rest apis", "git", "communication", "adaptability", "teamwork", "creativity"],
+    "summary": "Full stack developer building modern web applications with React frontend and Node.js backend."
+  },
+  {
+    "key": "b2d389fa-91cc-4a77-8f31-dd4456789abc",
+    "title": "DevOps Engineer",
+    "skills": ["docker", "kubernetes", "ci/cd", "gitlab", "prometheus", "linux", "bash", "rigor", "autonomy", "stress management"],
+    "summary": "DevOps engineer responsible for CI/CD pipelines, container orchestration and infrastructure monitoring."
+  },
+  {
+    "key": "c4e501bc-77ab-4b88-9e42-ee5567890def",
+    "title": "Data Engineer",
+    "skills": ["python", "sql", "spark", "airflow", "postgresql", "data pipelines", "analytical thinking", "rigor", "communication"],
+    "summary": "Data engineer designing and maintaining scalable data pipelines and analytics infrastructure."
+  },
+  {
+    "key": "d5f612cd-88bc-4c99-af53-ff6678901ghi",
+    "title": "HR Business Partner",
+    "skills": ["talent acquisition", "employee relations", "performance management", "hris", "onboarding", "labor law", "empathy", "active listening", "conflict resolution", "leadership"],
+    "summary": "HR Business Partner supporting managers and employees across the full employee lifecycle."
+  },
+  {
+    "key": "e6a723de-99cd-4d00-bg64-aa7789012jkl",
+    "title": "Talent Acquisition Specialist",
+    "skills": ["sourcing", "interviewing", "ats tools", "employer branding", "linkedin recruiter", "negotiation", "communication", "organization", "persuasion", "empathy"],
+    "summary": "Recruiter responsible for sourcing, screening and hiring top talent across technical and business roles."
+  },
+  {
+    "key": "f7b834ef-00de-4e11-ch75-bb8890123mno",
+    "title": "Financial Analyst",
+    "skills": ["financial modeling", "excel", "sql", "reporting", "budget management", "forecasting", "powerbi", "rigor", "analytical thinking", "attention to detail"],
+    "summary": "Financial analyst responsible for budgeting, forecasting and financial reporting across business units."
+  },
+  {
+    "key": "g8c945fa-11ef-4f22-di86-cc9901234pqr",
+    "title": "Finance Controller",
+    "skills": ["accounting", "ifrs", "consolidation", "erp", "excel", "audit", "tax compliance", "rigor", "leadership", "communication"],
+    "summary": "Finance controller overseeing accounting operations, financial close process and compliance reporting."
+  },
+  {
+    "key": "h9d056gb-22fa-4a33-ej97-dd0012345stu",
+    "title": "Product Manager",
+    "skills": ["product strategy", "roadmap planning", "agile", "jira", "user research", "data analysis", "leadership", "communication", "prioritization", "stakeholder management"],
+    "summary": "Product Manager driving product vision, roadmap and delivery in close collaboration with engineering and design."
+  },
+  {
+    "key": "i0e167hc-33ab-4b44-fk08-ee1123456vwx",
+    "title": "UX/UI Designer",
+    "skills": ["figma", "user research", "wireframing", "prototyping", "design systems", "accessibility", "creativity", "empathy", "communication", "attention to detail"],
+    "summary": "UX/UI designer crafting intuitive user experiences from research to high-fidelity prototypes."
+  }
+]

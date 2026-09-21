@@ -61,9 +61,18 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+      - name: Check the bundled fixtures match the backend
+        # frontend/src/generated/ is committed because Rollup resolves the
+        # staticDemo import on every build path. Fail loudly if it drifts from
+        # the backend, which stays the source of truth.
+        run: |
+          diff backend/demo_data/sample.json frontend/src/generated/demo-sample.json \
+            || { echo "::error::demo-sample.json is stale — run ./scripts/build-static-demo.sh and commit"; exit 1; }
+          diff backend/jobs.json frontend/src/generated/jobs.json \
+            || { echo "::error::jobs.json is stale — run ./scripts/build-static-demo.sh and commit"; exit 1; }
+
       - name: Build the static demo bundle
-        # Guards the public demo: it ships the backend's fixtures, so a change
-        # to sample.json or jobs.json that breaks the bundle is caught here.
+        # Guards the public demo: a change that breaks the bundle fails here.
         run: ./scripts/build-static-demo.sh
 
   docker:
