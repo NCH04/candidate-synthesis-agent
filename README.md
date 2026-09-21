@@ -331,53 +331,57 @@ every push and pull request (`.github/workflows/ci.yml`).
 
 ## 4. Deploy
 
-The repo ships with everything needed to deploy as a single Docker container.
-The default target is **Hugging Face Spaces** (free, native Docker SDK,
-no cold-start that matters for a portfolio demo).
+The repo ships with everything needed to deploy as a single Docker container,
+plus a free zero-compute path for the public demo.
 
-### 4.1 Hugging Face Spaces (recommended)
+**Hugging Face Docker Spaces now require a paid plan**; only Static Spaces are
+free. §4.1 publishes the demo as a free Static Space; §4.2 runs the real
+backend on any container host.
 
-1. **Create a new Space** at https://huggingface.co/new-space
-   - **Space SDK**: `Docker`
-   - **Hardware**: CPU basic is enough (the embedding model runs on CPU)
-   - Make the Space **public** so the demo URL is shareable
-2. **Add the Space as a git remote** (Spaces are git repos):
+### 4.1 Public demo — Hugging Face Static Space (free)
+
+The live demo is a **static build**: the React app with the backend's canned
+demo responses embedded, answering `/api/*` in the browser.
+
+That is not a downgrade. The public demo has always served pre-computed
+results — `DEMO_MODE=true` never calls Claude, it replays
+`backend/demo_data/sample.json`. Hugging Face bills Spaces that run compute
+(Docker, Gradio) while Static Spaces stay free, so the same responses are
+served from the browser instead: identical output, free to host, no cold start.
+
+The real backend is untouched and still runs locally, under Docker, and on any
+container host (§4.2).
+
+1. **Create a Static Space** at https://huggingface.co/new-space
+   - **SDK**: `Static` — *not* Docker, which requires a paid plan
+   - **Visibility**: `Public`
+2. **Add it as a remote** and publish:
    ```bash
-   git remote add space https://huggingface.co/spaces/<your-user>/<space-name>
-   ```
-3. **Push with the sync script**:
-   ```bash
+   git remote add space https://huggingface.co/spaces/<hf-user>/<space-name>
    ./scripts/sync-space.sh
    ```
-4. **Set the variable** in `Settings → Variables and secrets`:
-   - For a **live** demo: `ANTHROPIC_API_KEY` (mark as **Secret**) **and**
-     `APP_API_KEY` — without the second one the API is an unauthenticated
-     proxy to your Anthropic account. See §3.9.
-   - For a **public** demo where strangers must not spend your budget: set
-     `DEMO_MODE` = `true` instead (no API key needed). Every visitor gets the
-     pre-computed sample evaluation with zero API calls. **This is the
-     recommended setting for a public portfolio link.**
-5. The Space builds automatically. First build takes ~5 minutes. After that:
-   - Public URL: `https://huggingface.co/spaces/<your-user>/<space-name>`
-   - Embedded iframe URL for portfolios: `https://<your-user>-<space-name>.hf.space`
+   Hugging Face dropped git password authentication: when prompted, enter your
+   HF username and paste a **User Access Token** with *write* access
+   (https://huggingface.co/settings/tokens) as the password.
 
-#### Why a sync script rather than a plain `git push space main`
-
-Spaces reads its build config (`sdk: docker`, `app_port: 7860`) from YAML
-frontmatter at the very top of `README.md`. GitHub renders that same block as a
-metadata table above the title, which is noise on a portfolio repo. So `main`
-keeps a clean README, and `scripts/sync-space.sh` derives a Space-only branch
-that prepends the block from `deploy/hf-space-frontmatter.md`.
-
-That `space` branch is a **build artefact**: it is deleted, recreated from
-`main` and force-pushed on every run, so it can never drift or conflict. Never
-commit to it by hand — the next sync discards the commit. Edit the Space
-metadata (emoji, colours, title) in `deploy/hf-space-frontmatter.md` instead.
+`sync-space.sh` builds the bundle and publishes it from a throwaway git
+repository in a temp directory — nothing is branched, checked out or committed
+in your working repo, so a failed run cannot leave anything behind.
 
 ```bash
-./scripts/sync-space.sh              # rebuild from main and push
-./scripts/sync-space.sh --no-push    # rebuild locally and inspect first
+./scripts/build-static-demo.sh   # build only → frontend/dist-static/
+./scripts/sync-space.sh --no-push  # build and stage, inspect before publishing
 ```
+
+To preview the bundle exactly as the Space will serve it:
+
+```bash
+python3 -m http.server -d frontend/dist-static 8010
+```
+
+**Customising the demo**: edit `backend/demo_data/sample.json`. It is the single
+source of truth — the backend's `DEMO_MODE` and the static build both read it,
+and the build copies it in (`frontend/src/generated/`, gitignored).
 
 ### 4.2 Any other container host (Fly.io, Render, Railway, your VPS…)
 
@@ -413,7 +417,7 @@ This project is being actively extended. Items already shipped vs. planned:
 - [x] Fairness / bias check agent
 - [x] Live streaming of the synthesis (SSE)
 - [x] Docker + one-command setup (`docker compose up`)
-- [x] Public demo on Hugging Face Spaces
+- [x] Public demo on Hugging Face Spaces (free Static Space, zero compute)
 - [x] Cost controls (model routing, regex/heuristic pre-filters, result cache, economy mode)
 - [x] Demo mode (zero-API-call sample for public deployments)
 - [x] Schema-validated agent outputs with automatic retry

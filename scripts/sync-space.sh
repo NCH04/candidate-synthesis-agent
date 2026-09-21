@@ -1,171 +1,135 @@
 #!/usr/bin/env bash
 #
-# Rebuild the `space` branch and push it to Hugging Face Spaces.
+# Build the static demo and publish it to a Hugging Face Static Space.
 #
-# Why this exists
-# ---------------
-# HF Spaces reads its build config (sdk: docker, app_port: 7860) from YAML
-# frontmatter at the very top of README.md. GitHub renders that same block as a
-# metadata table above the title, which is noise on a portfolio repo. So `main`
-# keeps a clean README, and this script derives a Space-only branch that puts
-# the block back.
+# Why static
+# ----------
+# Hugging Face bills Spaces that run compute (Docker, Gradio); Static Spaces
+# stay free. The public demo has always served pre-computed results anyway —
+# DEMO_MODE=true never calls Claude — so the same canned responses are answered
+# in the browser instead. Same output, free to host, no cold start.
 #
-# `space` is a BUILD ARTEFACT, not a branch you work on: it is deleted and
-# recreated from scratch on every run, then force-pushed. Never commit to it by
-# hand — your commit would be discarded on the next sync.
+# The real backend is unchanged: it still runs locally and under Docker, and
+# deploys to any container host (see README §4.2).
+#
+# How it works
+# ------------
+# The Space is published from a throwaway git repository in a temp directory:
+# nothing is branched, checked out or committed in your working repo, so a
+# failed run cannot leave artefacts behind or strand you on the wrong branch.
 #
 # One-time setup
 # --------------
-#   git remote add space https://huggingface.co/spaces/<user>/<space-name>
+#   1. Create a Static Space at https://huggingface.co/new-space
+#        SDK: Static   Visibility: Public
+#   2. git remote add space https://huggingface.co/spaces/<hf-user>/<space-name>
 #
 # Usage
 # -----
-#   ./scripts/sync-space.sh              # rebuild from main and push
-#   ./scripts/sync-space.sh --no-push    # rebuild locally, inspect, push yourself
-#   SOURCE_BRANCH=develop ./scripts/sync-space.sh
+#   ./scripts/sync-space.sh              # build and publish
+#   ./scripts/sync-space.sh --no-push    # build and stage locally, inspect first
 #
 set -euo pipefail
 
-SOURCE_BRANCH="${SOURCE_BRANCH:-main}"
-SPACE_BRANCH="${SPACE_BRANCH:-space}"
 SPACE_REMOTE="${SPACE_REMOTE:-space}"
 PUSH=1
 [ "${1:-}" = "--no-push" ] && PUSH=0
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
-FRONTMATTER="deploy/hf-space-frontmatter.md"
+
+SPACE_README="deploy/hf-space-readme.md"
+BUNDLE="frontend/dist-static"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 
-[ -f "$FRONTMATTER" ] || die "missing $FRONTMATTER"
+[ -f "$SPACE_README" ] || die "missing $SPACE_README"
 
-# A dirty tree would be carried onto the Space branch or lost in the switch.
-if ! git diff-index --quiet HEAD -- 2>/dev/null || [ -n "$(git status --porcelain)" ]; then
-    die "working tree is not clean — commit or stash first"
-fi
-
-git show-ref --verify --quiet "refs/heads/$SOURCE_BRANCH" \
-    || die "source branch '$SOURCE_BRANCH' does not exist"
-
+REMOTE_URL=""
+HF_OWNER=""
 if [ "$PUSH" -eq 1 ]; then
     git remote get-url "$SPACE_REMOTE" >/dev/null 2>&1 || die \
 "remote '$SPACE_REMOTE' is not configured. Run:
   git remote add $SPACE_REMOTE https://huggingface.co/spaces/<hf-user>/<space-name>
-Or rebuild locally without pushing:
+Or build without publishing:
   $0 --no-push"
 
     REMOTE_URL="$(git remote get-url "$SPACE_REMOTE")"
 
-    # Check the namespace exists on the Hub. A Space URL built from a GitHub
-    # username instead of a Hugging Face one fails with an opaque auth error.
+    # A Space URL built from a GitHub username instead of a Hugging Face one
+    # fails later with an opaque 'not found'. Catch it here.
     case "$REMOTE_URL" in
         *huggingface.co/spaces/*)
             HF_OWNER="${REMOTE_URL#*huggingface.co/spaces/}"
             HF_OWNER="${HF_OWNER%%/*}"
             if command -v curl >/dev/null 2>&1; then
-                OWNER_STATUS="$(curl -s -o /dev/null -w '%{http_code}' \
+                status="$(curl -s -o /dev/null -w '%{http_code}' \
                     "https://huggingface.co/api/users/$HF_OWNER/overview" || echo 000)"
-                if [ "$OWNER_STATUS" = "404" ]; then
-                    die "'$HF_OWNER' is not a Hugging Face account (your GitHub
-username is not necessarily your HF one). Check it at https://huggingface.co/settings/profile
+                [ "$status" = "404" ] && die \
+"'$HF_OWNER' is not a Hugging Face account (your GitHub username is not
+necessarily your HF one). Check it at https://huggingface.co/settings/profile
 then fix the remote:
   git remote set-url $SPACE_REMOTE https://huggingface.co/spaces/<hf-user>/<space-name>"
-                fi
             fi
             ;;
+        *) die "remote '$SPACE_REMOTE' is not a Hugging Face Space URL: $REMOTE_URL" ;;
     esac
 fi
 
-# Validate the source before touching any branch, so a bad source can never
-# leave a half-built artefact behind.
-git show "$SOURCE_BRANCH:README.md" >/dev/null 2>&1 \
-    || die "'$SOURCE_BRANCH' has no README.md"
-if git show "$SOURCE_BRANCH:README.md" | head -1 | grep -q '^---$'; then
-    die "README.md on '$SOURCE_BRANCH' already starts with frontmatter.
-'$SOURCE_BRANCH' is probably behind the remote. Update it first:
-  git checkout $SOURCE_BRANCH && git pull --ff-only origin $SOURCE_BRANCH"
-fi
+./scripts/build-static-demo.sh
+[ -f "$BUNDLE/index.html" ] || die "no bundle at $BUNDLE"
 
-# Snapshot the frontmatter before switching branches: the working tree is about
-# to become the source branch's, which may not carry deploy/ at all.
-FRONTMATTER_TMP="$(mktemp)"
-cat "$FRONTMATTER" > "$FRONTMATTER_TMP"
-
-ORIGINAL_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-if [ "$ORIGINAL_BRANCH" = "$SPACE_BRANCH" ]; then
-    die "you are on '$SPACE_BRANCH', which this script deletes and recreates.
-Switch to your working branch first:
-  git checkout $SOURCE_BRANCH
-If you have commits on '$SPACE_BRANCH' you meant to keep, move them first:
-  git checkout $SOURCE_BRANCH && git cherry-pick <sha>"
-fi
-BUILT=0
-cleanup() {
-    rm -f "$FRONTMATTER_TMP"
-    git checkout --quiet "$ORIGINAL_BRANCH" 2>/dev/null || true
-    # Drop the artefact if we failed partway through building it.
-    [ "$BUILT" -eq 0 ] && git branch --quiet -D "$SPACE_BRANCH" 2>/dev/null
-    return 0
-}
+# Assemble the Space in a throwaway repo, entirely outside this one.
+STAGE="$(mktemp -d)"
+cleanup() { rm -rf "$STAGE"; }
 trap cleanup EXIT
 
-echo "Rebuilding '$SPACE_BRANCH' from '$SOURCE_BRANCH'…"
-git branch --quiet -D "$SPACE_BRANCH" 2>/dev/null || true
-git checkout --quiet -b "$SPACE_BRANCH" "$SOURCE_BRANCH"
+cp -r "$BUNDLE/." "$STAGE/"
+cp "$SPACE_README" "$STAGE/README.md"
 
-# Build the new README outside the repo: an intermediate file written here
-# would survive a crash and get swept into the next `git add -A`.
-BUILD_TMP="$(mktemp)"
-cat "$FRONTMATTER_TMP" README.md > "$BUILD_TMP"
-cat "$BUILD_TMP" > README.md
-rm -f "$BUILD_TMP"
+git -C "$STAGE" init -q -b main
+git -C "$STAGE" add -A
+git -C "$STAGE" -c user.name="$(git config user.name || echo deploy)" \
+                -c user.email="$(git config user.email || echo deploy@localhost)" \
+                commit -q -m "Publish static demo"
 
-# Commit only the README: never sweep up stray files with `git add -A`.
-git add README.md
-git commit --quiet -m "chore(space): add Hugging Face Spaces frontmatter
+echo "  ✓ staged $(du -sh "$STAGE" | cut -f1) in $STAGE"
 
-Generated by scripts/sync-space.sh from '$SOURCE_BRANCH'. Do not edit this
-branch by hand — it is recreated on every sync."
+if [ "$PUSH" -eq 0 ]; then
+    KEEP="$REPO_ROOT/$BUNDLE"
+    echo "  → not published. The bundle is at $KEEP"
+    echo "    Preview it with:  python3 -m http.server -d $KEEP 8010"
+    exit 0
+fi
 
-BUILT=1
-echo "  ✓ $SPACE_BRANCH built ($(git rev-parse --short HEAD))"
-
-if [ "$PUSH" -eq 1 ]; then
-    echo "Pushing to '$SPACE_REMOTE' ($REMOTE_URL)…"
-    PUSH_LOG="$(mktemp)"
-    if git push --force "$SPACE_REMOTE" "$SPACE_BRANCH:main" 2>&1 | tee "$PUSH_LOG"; then
+echo "Publishing to '$SPACE_REMOTE' ($REMOTE_URL)…"
+PUSH_LOG="$(mktemp)"
+if git -C "$STAGE" push --force "$REMOTE_URL" main 2>&1 | tee "$PUSH_LOG"; then
+    rm -f "$PUSH_LOG"
+    echo "  ✓ published — the Space will rebuild automatically"
+    echo "    https://huggingface.co/spaces/$HF_OWNER/${REMOTE_URL##*/}"
+else
+    # Report the failure that actually happened: leading with token instructions
+    # when the Space simply does not exist sends people chasing the wrong problem.
+    if grep -qiE "not found|does not exist|404" "$PUSH_LOG"; then
         rm -f "$PUSH_LOG"
-    else
-        # Report the failure that actually happened. Leading with the token
-        # instructions when the Space simply does not exist sends people
-        # chasing a credential problem they do not have.
-        if grep -qiE "not found|does not exist|404" "$PUSH_LOG"; then
-            rm -f "$PUSH_LOG"
-            die "the Space was not found. git cannot create it for you.
+        die "the Space was not found. git cannot create it for you.
 
 If it does not exist yet, create it at https://huggingface.co/new-space
   Owner : $HF_OWNER
   Name  : ${REMOTE_URL##*/}
-  SDK   : Docker
+  SDK   : Static      <-- not Docker: Docker Spaces are a paid plan
   Visibility: Public
 
 If it already exists, Hugging Face also answers 'not found' when your token
 cannot write to it — check the token has WRITE access and belongs to
-'$HF_OWNER': https://huggingface.co/settings/tokens
-
-Then run this script again."
-        fi
-        rm -f "$PUSH_LOG"
-        die "push failed — authentication.
+'$HF_OWNER': https://huggingface.co/settings/tokens"
+    fi
+    rm -f "$PUSH_LOG"
+    die "push failed — authentication.
 
 Hugging Face dropped git password authentication. Use a User Access Token:
   1. Create one with WRITE access at https://huggingface.co/settings/tokens
   2. Push again — enter your HF username, and paste the TOKEN as the password
      (\`git config --global credential.helper store\` saves it for next time)"
-    fi
-    echo "  ✓ pushed — the Space will rebuild automatically"
-else
-    echo "  → not pushed. Inspect it, then:"
-    echo "      git push --force $SPACE_REMOTE $SPACE_BRANCH:main"
 fi

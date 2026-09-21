@@ -61,6 +61,11 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+      - name: Build the static demo bundle
+        # Guards the public demo: it ships the backend's fixtures, so a change
+        # to sample.json or jobs.json that breaks the bundle is caught here.
+        run: ./scripts/build-static-demo.sh
+
   docker:
     name: Docker image builds
     runs-on: ubuntu-latest

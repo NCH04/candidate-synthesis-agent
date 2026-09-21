@@ -5,6 +5,7 @@ __pycache__/
 *.pyd
 .python-version
 .venv/
+.venv-*/
 venv/
 env/
 ENV/
@@ -24,6 +25,10 @@ node_modules/
 dist/
 .vite/
 *.log
+
+# Build-time copies of backend fixtures (see scripts/build-static-demo.sh)
+frontend/src/generated/*.json
+frontend/dist-static/
 
 # Local agent config (kept on disk, never committed)
 .claude/
