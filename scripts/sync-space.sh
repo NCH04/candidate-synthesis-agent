@@ -126,17 +126,32 @@ echo "  ✓ $SPACE_BRANCH built ($(git rev-parse --short HEAD))"
 
 if [ "$PUSH" -eq 1 ]; then
     echo "Pushing to '$SPACE_REMOTE' ($REMOTE_URL)…"
-    if ! git push --force "$SPACE_REMOTE" "$SPACE_BRANCH:main"; then
-        die "push failed.
+    PUSH_LOG="$(mktemp)"
+    if git push --force "$SPACE_REMOTE" "$SPACE_BRANCH:main" 2>&1 | tee "$PUSH_LOG"; then
+        rm -f "$PUSH_LOG"
+    else
+        # Report the failure that actually happened. Leading with the token
+        # instructions when the Space simply does not exist sends people
+        # chasing a credential problem they do not have.
+        if grep -qiE "repository not found|does not exist|404" "$PUSH_LOG"; then
+            rm -f "$PUSH_LOG"
+            die "the Space does not exist yet — git cannot create it for you.
+
+Create it at https://huggingface.co/new-space
+  Owner : $HF_OWNER
+  Name  : ${REMOTE_URL##*/}
+  SDK   : Docker
+  Visibility: Public
+
+Then run this script again."
+        fi
+        rm -f "$PUSH_LOG"
+        die "push failed — authentication.
 
 Hugging Face dropped git password authentication. Use a User Access Token:
   1. Create one with WRITE access at https://huggingface.co/settings/tokens
   2. Push again — enter your HF username, and paste the TOKEN as the password
-     (\`git config --global credential.helper store\` saves it for next time)
-
-If the error mentions a missing repository, create the Space first at
-https://huggingface.co/new-space (SDK: Docker) under the same name as the
-remote URL."
+     (\`git config --global credential.helper store\` saves it for next time)"
     fi
     echo "  ✓ pushed — the Space will rebuild automatically"
 else
