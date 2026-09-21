@@ -140,15 +140,19 @@ if [ "$PUSH" -eq 1 ]; then
         # Report the failure that actually happened. Leading with the token
         # instructions when the Space simply does not exist sends people
         # chasing a credential problem they do not have.
-        if grep -qiE "repository not found|does not exist|404" "$PUSH_LOG"; then
+        if grep -qiE "not found|does not exist|404" "$PUSH_LOG"; then
             rm -f "$PUSH_LOG"
-            die "the Space does not exist yet — git cannot create it for you.
+            die "the Space was not found. git cannot create it for you.
 
-Create it at https://huggingface.co/new-space
+If it does not exist yet, create it at https://huggingface.co/new-space
   Owner : $HF_OWNER
   Name  : ${REMOTE_URL##*/}
   SDK   : Docker
   Visibility: Public
+
+If it already exists, Hugging Face also answers 'not found' when your token
+cannot write to it — check the token has WRITE access and belongs to
+'$HF_OWNER': https://huggingface.co/settings/tokens
 
 Then run this script again."
         fi
